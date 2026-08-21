@@ -12,6 +12,7 @@ import {
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
+import { shareInvoicePdf } from "@/lib/invoice-sharing";
 
 type Product = { id: string; name: string; category: string; price: number; stock: number; min: number };
 type Customer = { id: string; name: string; phone: string; balance: number };
@@ -63,9 +64,13 @@ export default function HomeScreen() {
       const line = invoiceItems.find((item) => item.product.id === product.id);
       return line ? { ...product, stock: Math.max(0, product.stock - line.quantity) } : product;
     }));
+    const savedLines = invoiceItems.map((item) => ({ name: item.product.name, quantity: item.quantity, unitPrice: item.product.price }));
     setInvoiceItems([]);
     setShowInvoice(false);
-    Alert.alert("تم حفظ الفاتورة", "تم تحديث المخزون وحفظ الفاتورة بنجاح.");
+    Alert.alert("تم حفظ الفاتورة", "تم تحديث المخزون وحفظ الفاتورة بنجاح.", [
+      { text: "لاحقًا", style: "cancel" },
+      { text: "مشاركة PDF عبر واتساب", onPress: () => void shareInvoicePdf(savedLines) },
+    ]);
   };
 
   const title = activeSection === "home" ? "نظرة عامة" : activeSection === "invoice" ? "الفواتير" : activeSection === "stock" ? "المخزون" : "العملاء";
