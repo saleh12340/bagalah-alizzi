@@ -1,160 +1,146 @@
 import { useMemo, useState } from "react";
-import {
-  Alert,
-  FlatList,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
+import { trpc } from "@/lib/trpc";
 import { shareInvoicePdf } from "@/lib/invoice-sharing";
 
-type Product = { id: string; name: string; category: string; price: number; stock: number; min: number };
-type Customer = { id: string; name: string; phone: string; balance: number };
-
-const initialProducts: Product[] = [
-  { id: "1", name: "حليب كامل الدسم", category: "ألبان", price: 7.5, stock: 18, min: 10 },
-  { id: "2", name: "أرز بسمتي 5 كجم", category: "مواد أساسية", price: 32, stock: 6, min: 8 },
-  { id: "3", name: "مياه معدنية  كرتون", category: "مشروبات", price: 14, stock: 24, min: 12 },
-  { id: "4", name: "زيت دوار الشمس", category: "مواد أساسية", price: 18, stock: 9, min: 8 },
-];
-const initialCustomers: Customer[] = [
-  { id: "1", name: "أحمد محمد", phone: "050 123 4567", balance: 185 },
-  { id: "2", name: "مؤسسة الربيع", phone: "055 987 2100", balance: 920 },
-  { id: "3", name: "سالم العتيبي", phone: "053 442 1188", balance: 0 },
-];
-
-const money = (value: number) => `${value.toFixed(2)} ر.س`;
+type Section = "home" | "invoice" | "stock" | "customers" | "reports" | "expenses" | "settings";
+type DraftLine = { productId: number; name: string; quantity: number; price: number; stock: number };
+const money = (v: number | string) => `${Number(v || 0).toFixed(2)} ر.س`;
+const todayRange = () => { const from = new Date(); from.setHours(0, 0, 0, 0); const to = new Date(from); to.setDate(to.getDate() + 1); return { from, to }; };
 
 export default function HomeScreen() {
   const colors = useColors();
-  const [products, setProducts] = useState(initialProducts);
-  const [customers] = useState(initialCustomers);
+  const [section, setSection] = useState<Section>("home");
   const [search, setSearch] = useState("");
-  const [activeSection, setActiveSection] = useState<"home" | "invoice" | "stock" | "customers">("home");
-  const [invoiceItems, setInvoiceItems] = useState<{ product: Product; quantity: number }[]>([]);
   const [showInvoice, setShowInvoice] = useState(false);
-  const [showCustomerForm, setShowCustomerForm] = useState(false);
+  const [showCustomer, setShowCustomer] = useState(false);
+  const [showProduct, setShowProduct] = useState(false);
+  const [invoiceLines, setInvoiceLines] = useState<DraftLine[]>([]);
+  const [customerId, setCustomerId] = useState<number | null>(null);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [productName, setProductName] = useState("");
+  const [productPurchase, setProductPurchase] = useState("");
+  const [productSale, setProductSale] = useState("");
+  const [productStock, setProductStock] = useState("");
+  const [productMin, setProductMin] = useState("");
+  const [expenseCategory, setExpenseCategory] = useState("");
+  const [expenseAmount, setExpenseAmount] = useState("");
 
-  const lowStock = products.filter((product) => product.stock <= product.min);
-  const invoiceTotal = useMemo(
-    () => invoiceItems.reduce((sum, item) => sum + item.product.price * item.quantity, 0),
-    [invoiceItems],
-  );
-  const filteredProducts = products.filter((product) => product.name.includes(search.trim()));
+  const productsQ = trpc.products.list.useQuery({ search: search || undefined });
+  const customersQ = trpc.customers.list.useQuery({ search: search || undefined });
+  const invoicesQ = trpc.sales.recent.useQuery({ limit: 30 });
+  const reportQ = trpc.reports.summary.useQuery(todayRange());
+  const expensesQ = trpc.expenses.list.useQuery();
+  const createCustomer = trpc.customers.create.useMutation({ onSuccess: () => { customersQ.refetch(); setShowCustomer(false); setCustomerName(""); setCustomerPhone(""); Alert.alert("تم الحفظ", "تمت إضافة العميل إلى قاعدة البيانات."); } });
+  const createProduct = trpc.products.create.useMutation({ onSuccess: () => { productsQ.refetch(); setShowProduct(false); setProductName(""); setProductPurchase(""); setProductSale(""); setProductStock(""); setProductMin(""); Alert.alert("تم الحفظ", "تمت إضافة الصنف وتسجيل رصيده الافتتاحي."); } });
+  const createSale = trpc.sales.create.useMutation({ onSuccess: async (data) => { productsQ.refetch(); customersQ.refetch(); invoicesQ.refetch(); reportQ.refetch(); setInvoiceLines([]); setCustomerId(null); setShowInvoice(false); Alert.alert("تم حفظ الفاتورة", `رقم ${data.invoiceNo}\nالإجمالي ${money(data.total)}`, [{ text: "إغلاق" }, { text: "طباعة / مشاركة", onPress: () => void shareInvoicePdf(data.items, undefined) }]); } });
+  const createExpense = trpc.expenses.create.useMutation({ onSuccess: () => { expensesQ.refetch(); reportQ.refetch(); setExpenseCategory(""); setExpenseAmount(""); Alert.alert("تم الحفظ", "تم تسجيل المصروف."); } });
 
-  const addProduct = (product: Product) => {
-    setInvoiceItems((items) => {
-      const found = items.find((item) => item.product.id === product.id);
-      if (found) return items.map((item) => item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
-      return [...items, { product, quantity: 1 }];
-    });
-  };
+  const products = productsQ.data ?? [];
+  const customers = customersQ.data ?? [];
+  const invoices = invoicesQ.data ?? [];
+  const lowStock = products.filter((p) => Number(p.stock) <= Number(p.minStock));
+  const draftTotal = useMemo(() => invoiceLines.reduce((s, x) => s + x.quantity * x.price, 0), [invoiceLines]);
+  const title = { home: "نظرة عامة", invoice: "الفواتير", stock: "المخزون والأصناف", customers: "العملاء والحسابات", reports: "التقارير", expenses: "المصروفات", settings: "الإعدادات" }[section];
 
-  const saveInvoice = () => {
-    if (!invoiceItems.length) return Alert.alert("الفاتورة فارغة", "أضف منتجًا واحدًا على الأقل قبل الحفظ.");
-    setProducts((items) => items.map((product) => {
-      const line = invoiceItems.find((item) => item.product.id === product.id);
-      return line ? { ...product, stock: Math.max(0, product.stock - line.quantity) } : product;
-    }));
-    const savedLines = invoiceItems.map((item) => ({ name: item.product.name, quantity: item.quantity, unitPrice: item.product.price }));
-    setInvoiceItems([]);
-    setShowInvoice(false);
-    Alert.alert("تم حفظ الفاتورة", "تم تحديث المخزون وحفظ الفاتورة بنجاح.", [
-      { text: "لاحقًا", style: "cancel" },
-      { text: "مشاركة PDF عبر واتساب", onPress: () => void shareInvoicePdf(savedLines) },
-    ]);
-  };
-
-  const title = activeSection === "home" ? "نظرة عامة" : activeSection === "invoice" ? "الفواتير" : activeSection === "stock" ? "المخزون" : "العملاء";
+  const addLine = (p: (typeof products)[number]) => setInvoiceLines((old) => { const found = old.find((x) => x.productId === p.id); if (found) return old.map((x) => x.productId === p.id ? { ...x, quantity: x.quantity + 1 } : x); return [...old, { productId: p.id, name: p.name, quantity: 1, price: Number(p.salePrice), stock: Number(p.stock) }]; });
+  const saveCustomer = () => { if (!customerName.trim()) return Alert.alert("تنبيه", "اكتب اسم العميل."); createCustomer.mutate({ name: customerName.trim(), phone: customerPhone.trim() || undefined, openingBalance: 0 }); };
+  const saveProduct = () => { const sale = Number(productSale); if (!productName.trim() || !Number.isFinite(sale) || sale < 0) return Alert.alert("تنبيه", "أدخل اسم الصنف وسعر بيع صحيح."); createProduct.mutate({ name: productName.trim(), purchasePrice: Number(productPurchase) || 0, salePrice: sale, stock: Number(productStock) || 0, minStock: Number(productMin) || 0, unit: "حبة" }); };
+  const saveInvoice = () => { if (!invoiceLines.length) return Alert.alert("الفاتورة فارغة", "أضف صنفًا واحدًا على الأقل."); const invalid = invoiceLines.find((x) => x.quantity > x.stock); if (invalid) return Alert.alert("المخزون غير كافٍ", `${invalid.name}: المتوفر ${invalid.stock}`); createSale.mutate({ customerId, paymentType: customerId ? "credit" : "cash", paid: customerId ? 0 : draftTotal, discount: 0, items: invoiceLines.map((x) => ({ productId: x.productId, quantity: x.quantity })) }); };
 
   return (
-    <ScreenContainer className="px-5 pt-4" safeAreaClassName="bg-background">
+    <ScreenContainer className="px-4 pt-3" safeAreaClassName="bg-background">
       <View style={styles.page}>
         <View style={styles.header}>
-          <View>
-            <Text style={[styles.kicker, { color: colors.primary }]}>بقالة العزي</Text>
-            <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text>
-          </View>
-          <View style={[styles.logo, { backgroundColor: colors.primary }]}><IconSymbol name="cart.fill" size={24} color="#FFFFFF" /></View>
+          <View><Text style={[styles.brand, { color: colors.primary }]}>بقالة العزي</Text><Text style={[styles.title, { color: colors.foreground }]}>{title}</Text></View>
+          <View style={[styles.logo, { backgroundColor: colors.primary }]}><IconSymbol name="cart.fill" size={24} color="#fff" /></View>
         </View>
 
-        {activeSection === "home" && <>
-          <View style={[styles.hero, { backgroundColor: colors.primary }]}>
-            <View><Text style={styles.heroLabel}>مبيعات اليوم</Text><Text style={styles.heroValue}>1,248.50 ر.س</Text><Text style={styles.heroHint}>↑ 12.4% مقارنة بالأمس</Text></View>
-            <View style={styles.heroIcon}><IconSymbol name="chart.bar.fill" size={30} color="#D7F7E9" /></View>
-          </View>
-          <View style={styles.statsRow}>
-            <StatCard label="فواتير اليوم" value="24" icon="doc.text.fill" color={"#2878C8"} />
-            <StatCard label="ديون العملاء" value="1,105 ر.س" icon="person.2.fill" color={colors.warning} />
-          </View>
-          <Pressable onPress={() => setShowInvoice(true)} style={({ pressed }) => [styles.primaryButton, { backgroundColor: colors.foreground }, pressed && { opacity: 0.8 }]}>
-            <IconSymbol name="plus" size={21} color="#FFFFFF" /><Text style={styles.primaryButtonText}>إنشاء فاتورة جديدة</Text>
-          </Pressable>
-          <SectionHeader title="تنبيهات المخزون" action="عرض الكل" onPress={() => setActiveSection("stock")} colors={colors} />
-          {lowStock.slice(0, 2).map((product) => <LowStockRow key={product.id} product={product} colors={colors} />)}
-          <SectionHeader title="اختصارات" action="" onPress={() => undefined} colors={colors} />
-          <View style={styles.quickGrid}>
-            <QuickAction icon="person.badge.plus" label="عميل جديد" color={"#2878C8"} onPress={() => setShowCustomerForm(true)} />
-            <QuickAction icon="shippingbox.fill" label="إضافة منتج" color={colors.primary} onPress={() => setActiveSection("stock")} />
-            <QuickAction icon="chart.bar.fill" label="التقارير" color="#8B5CF6" onPress={() => Alert.alert("التقارير", "ستتوفر تقارير اليوم والأسبوع والشهر في النسخة التالية.")} />
-            <QuickAction icon="ellipsis" label="المزيد" color="#718078" onPress={() => setActiveSection("customers")} />
-          </View>
-        </>}
-
-        {activeSection === "invoice" && <ListSection title="آخر الفواتير" colors={colors} empty="لا توجد فواتير محفوظة بعد" />}
-        {activeSection === "stock" && <>
-          <View style={[styles.searchBox, { backgroundColor: colors.surface, borderColor: colors.border }]}><IconSymbol name="magnifyingglass" size={19} color={colors.muted} /><TextInput value={search} onChangeText={setSearch} placeholder="ابحث عن منتج" placeholderTextColor={colors.muted} style={[styles.searchInput, { color: colors.foreground }]} /></View>
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>المنتجات ({filteredProducts.length})</Text>
-          <FlatList data={filteredProducts} keyExtractor={(item) => item.id} renderItem={({ item }) => <ProductRow product={item} colors={colors} onAdd={() => addProduct(item)} />} contentContainerStyle={{ gap: 10, paddingBottom: 100 }} />
-        </>}
-        {activeSection === "customers" && <>
-          <Pressable onPress={() => setShowCustomerForm(true)} style={[styles.outlineButton, { borderColor: colors.primary }]}><IconSymbol name="plus" size={18} color={colors.primary} /><Text style={[styles.outlineButtonText, { color: colors.primary }]}>إضافة عميل</Text></Pressable>
-          <FlatList data={customers} keyExtractor={(item) => item.id} renderItem={({ item }) => <CustomerRow customer={item} colors={colors} />} contentContainerStyle={{ gap: 10, paddingTop: 14, paddingBottom: 100 }} />
-        </>}
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+          {section === "home" && <Home colors={colors} report={reportQ.data} lowStock={lowStock} onInvoice={() => setShowInvoice(true)} onCustomer={() => setShowCustomer(true)} onProduct={() => setShowProduct(true)} onSection={setSection} />}
+          {section === "invoice" && <Invoices colors={colors} invoices={invoices} onNew={() => setShowInvoice(true)} />}
+          {section === "stock" && <Stock colors={colors} products={products} lowStock={lowStock} search={search} setSearch={setSearch} onAdd={() => setShowProduct(true)} onInvoice={addLine} />}
+          {section === "customers" && <Customers colors={colors} customers={customers} search={search} setSearch={setSearch} onAdd={() => setShowCustomer(true)} />}
+          {section === "reports" && <Reports colors={colors} report={reportQ.data} />}
+          {section === "expenses" && <Expenses colors={colors} expenses={expensesQ.data ?? []} category={expenseCategory} amount={expenseAmount} setCategory={setExpenseCategory} setAmount={setExpenseAmount} onSave={() => { const amount = Number(expenseAmount); if (!expenseCategory.trim() || !amount) return Alert.alert("تنبيه", "أدخل نوع المصروف والمبلغ."); createExpense.mutate({ category: expenseCategory.trim(), amount }); }} />}
+          {section === "settings" && <Settings colors={colors} />}
+          <View style={{ height: 90 }} />
+        </ScrollView>
 
         <View style={[styles.tabBar, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <TabItem icon="house.fill" label="الرئيسية" active={activeSection === "home"} colors={colors} onPress={() => setActiveSection("home")} />
-          <TabItem icon="doc.text.fill" label="الفواتير" active={activeSection === "invoice"} colors={colors} onPress={() => setActiveSection("invoice")} />
-          <TabItem icon="person.2.fill" label="العملاء" active={activeSection === "customers"} colors={colors} onPress={() => setActiveSection("customers")} />
-          <TabItem icon="shippingbox.fill" label="المخزون" active={activeSection === "stock"} colors={colors} onPress={() => setActiveSection("stock")} />
+          <Tab icon="house.fill" label="الرئيسية" active={section === "home"} colors={colors} onPress={() => setSection("home")} />
+          <Tab icon="doc.text.fill" label="الفواتير" active={section === "invoice"} colors={colors} onPress={() => setSection("invoice")} />
+          <Tab icon="person.2.fill" label="العملاء" active={section === "customers"} colors={colors} onPress={() => setSection("customers")} />
+          <Tab icon="shippingbox.fill" label="المخزون" active={section === "stock"} colors={colors} onPress={() => setSection("stock")} />
+          <Tab icon="ellipsis" label="المزيد" active={section === "reports" || section === "expenses" || section === "settings"} colors={colors} onPress={() => setSection("reports")} />
         </View>
       </View>
 
       <Modal visible={showInvoice} animationType="slide" transparent onRequestClose={() => setShowInvoice(false)}>
-        <View style={styles.modalBackdrop}><View style={[styles.modalCard, { backgroundColor: colors.background }]}>
-          <View style={styles.modalHeader}><Text style={[styles.modalTitle, { color: colors.foreground }]}>فاتورة جديدة</Text><Pressable onPress={() => setShowInvoice(false)}><IconSymbol name="xmark" size={24} color={colors.muted} /></Pressable></View>
-          <View style={[styles.searchBox, { backgroundColor: colors.surface, borderColor: colors.border }]}><IconSymbol name="magnifyingglass" size={19} color={colors.muted} /><TextInput value={search} onChangeText={setSearch} placeholder="أضف منتجًا بسرعة" placeholderTextColor={colors.muted} style={[styles.searchInput, { color: colors.foreground }]} /></View>
-          <FlatList data={filteredProducts} keyExtractor={(item) => item.id} renderItem={({ item }) => <ProductRow product={item} colors={colors} onAdd={() => addProduct(item)} />} style={{ maxHeight: 260 }} />
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>الأصناف المضافة</Text>
-          {invoiceItems.map((item) => <View key={item.product.id} style={styles.invoiceLine}><Text style={[styles.lineName, { color: colors.foreground }]}>{item.product.name} × {item.quantity}</Text><Text style={[styles.lineTotal, { color: colors.primary }]}>{money(item.product.price * item.quantity)}</Text></View>)}
-          <View style={[styles.totalRow, { borderTopColor: colors.border }]}><Text style={[styles.totalLabel, { color: colors.foreground }]}>الإجمالي</Text><Text style={[styles.totalValue, { color: colors.primary }]}>{money(invoiceTotal)}</Text></View>
-          <Pressable onPress={saveInvoice} style={[styles.primaryButton, { backgroundColor: colors.primary }]}><Text style={styles.primaryButtonText}>حفظ الفاتورة</Text></Pressable>
+        <View style={styles.backdrop}><View style={[styles.modal, { backgroundColor: colors.background }]}>
+          <ModalHeader title="فاتورة مبيعات جديدة" colors={colors} close={() => setShowInvoice(false)} />
+          <Text style={[styles.label, { color: colors.muted }]}>اختر العميل (اختياري)</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingVertical: 6 }}>
+            <Pill label="نقدي" active={customerId === null} colors={colors} onPress={() => setCustomerId(null)} />
+            {customers.slice(0, 10).map((c) => <Pill key={c.id} label={c.name} active={customerId === c.id} colors={colors} onPress={() => setCustomerId(c.id)} />)}
+          </ScrollView>
+          <View style={[styles.searchBox, { backgroundColor: colors.surface, borderColor: colors.border }]}><IconSymbol name="magnifyingglass" size={18} color={colors.muted} /><TextInput value={search} onChangeText={setSearch} placeholder="ابحث عن صنف لإضافته" placeholderTextColor={colors.muted} style={[styles.input, { color: colors.foreground }]} /></View>
+          <FlatList data={products.filter((p) => p.name.includes(search.trim()))} keyExtractor={(p) => String(p.id)} style={{ maxHeight: 230 }} renderItem={({ item }) => <ProductRow p={item} colors={colors} onPress={() => addLine(item)} />} />
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>تفاصيل الفاتورة</Text>
+          {invoiceLines.map((x) => <View key={x.productId} style={[styles.invoiceLine, { borderBottomColor: colors.border }]}><View style={{ flex: 1 }}><Text style={[styles.rowTitle, { color: colors.foreground }]}>{x.name}</Text><Text style={[styles.rowSub, { color: colors.muted }]}>{x.quantity} × {money(x.price)}</Text></View><Text style={[styles.lineTotal, { color: colors.primary }]}>{money(x.quantity * x.price)}</Text></View>)}
+          <View style={styles.total}><Text style={[styles.totalLabel, { color: colors.muted }]}>الإجمالي</Text><Text style={[styles.totalValue, { color: colors.primary }]}>{money(draftTotal)}</Text></View>
+          <Pressable disabled={createSale.isPending} onPress={saveInvoice} style={[styles.primaryButton, { backgroundColor: colors.primary }, createSale.isPending && { opacity: .6 }]}><Text style={styles.buttonText}>{createSale.isPending ? "جاري الحفظ..." : "حفظ الفاتورة وتحديث المخزون"}</Text></Pressable>
         </View></View>
       </Modal>
 
-      <Modal visible={showCustomerForm} animationType="slide" transparent onRequestClose={() => setShowCustomerForm(false)}>
-        <View style={styles.modalBackdrop}><View style={[styles.modalCard, { backgroundColor: colors.background }]}><View style={styles.modalHeader}><Text style={[styles.modalTitle, { color: colors.foreground }]}>عميل جديد</Text><Pressable onPress={() => setShowCustomerForm(false)}><IconSymbol name="xmark" size={24} color={colors.muted} /></Pressable></View><TextInput value={customerName} onChangeText={setCustomerName} placeholder="اسم العميل" placeholderTextColor={colors.muted} style={[styles.formInput, { borderColor: colors.border, color: colors.foreground }]} /><TextInput value={customerPhone} onChangeText={setCustomerPhone} placeholder="رقم الهاتف" keyboardType="phone-pad" placeholderTextColor={colors.muted} style={[styles.formInput, { borderColor: colors.border, color: colors.foreground }]} /><Pressable onPress={() => { setShowCustomerForm(false); setCustomerName(""); setCustomerPhone(""); Alert.alert("تمت الإضافة", "تم حفظ بيانات العميل."); }} style={[styles.primaryButton, { backgroundColor: colors.primary }]}><Text style={styles.primaryButtonText}>حفظ العميل</Text></Pressable></View></View>
+      <Modal visible={showCustomer} animationType="slide" transparent onRequestClose={() => setShowCustomer(false)}>
+        <View style={styles.backdrop}><View style={[styles.modal, { backgroundColor: colors.background }]}><ModalHeader title="إضافة عميل" colors={colors} close={() => setShowCustomer(false)} /><Field label="اسم العميل" value={customerName} onChangeText={setCustomerName} colors={colors} placeholder="مثال: أحمد محمد" /><Field label="رقم الهاتف" value={customerPhone} onChangeText={setCustomerPhone} colors={colors} placeholder="رقم الجوال" keyboardType="phone-pad" /><Pressable disabled={createCustomer.isPending} onPress={saveCustomer} style={[styles.primaryButton, { backgroundColor: colors.primary }]}><Text style={styles.buttonText}>{createCustomer.isPending ? "جاري الحفظ..." : "حفظ العميل"}</Text></Pressable></View></View>
+      </Modal>
+
+      <Modal visible={showProduct} animationType="slide" transparent onRequestClose={() => setShowProduct(false)}>
+        <View style={styles.backdrop}><View style={[styles.modal, { backgroundColor: colors.background }]}><ModalHeader title="إضافة صنف جديد" colors={colors} close={() => setShowProduct(false)} /><Field label="اسم الصنف" value={productName} onChangeText={setProductName} colors={colors} placeholder="مثال: كرتون مياه" /><View style={styles.two}><Field label="سعر الشراء" value={productPurchase} onChangeText={setProductPurchase} colors={colors} placeholder="0" keyboardType="decimal-pad" /><Field label="سعر البيع" value={productSale} onChangeText={setProductSale} colors={colors} placeholder="0" keyboardType="decimal-pad" /></View><View style={styles.two}><Field label="الرصيد الافتتاحي" value={productStock} onChangeText={setProductStock} colors={colors} placeholder="0" keyboardType="decimal-pad" /><Field label="الحد الأدنى" value={productMin} onChangeText={setProductMin} colors={colors} placeholder="0" keyboardType="decimal-pad" /></View><Pressable disabled={createProduct.isPending} onPress={saveProduct} style={[styles.primaryButton, { backgroundColor: colors.primary }]}><Text style={styles.buttonText}>{createProduct.isPending ? "جاري الحفظ..." : "حفظ الصنف"}</Text></Pressable></View></View>
       </Modal>
     </ScreenContainer>
   );
 }
 
-function StatCard({ label, value, icon, color }: { label: string; value: string; icon: any; color: string }) { return <View style={styles.statCard}><IconSymbol name={icon} size={20} color={color} /><Text style={styles.statLabel}>{label}</Text><Text style={styles.statValue}>{value}</Text></View>; }
-function SectionHeader({ title, action, onPress, colors }: any) { return <View style={styles.sectionHeader}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>{title}</Text>{action ? <Pressable onPress={onPress}><Text style={[styles.sectionAction, { color: colors.primary }]}>{action}</Text></Pressable> : null}</View>; }
-function LowStockRow({ product, colors }: { product: Product; colors: any }) { return <View style={[styles.listRow, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={[styles.productDot, { backgroundColor: colors.warning }]}><IconSymbol name="exclamationmark.triangle.fill" size={17} color="#FFFFFF" /></View><View style={styles.rowMain}><Text style={[styles.rowTitle, { color: colors.foreground }]}>{product.name}</Text><Text style={[styles.rowSub, { color: colors.muted }]}>متبقي {product.stock} وحدات · الحد الأدنى {product.min}</Text></View><Text style={[styles.warningText, { color: colors.warning }]}>منخفض</Text></View>; }
-function ProductRow({ product, colors, onAdd }: { product: Product; colors: any; onAdd: () => void }) { return <Pressable onPress={onAdd} style={({ pressed }) => [styles.listRow, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.7 }]}><View style={[styles.productDot, { backgroundColor: colors.primary }]}><IconSymbol name="shippingbox.fill" size={17} color="#FFFFFF" /></View><View style={styles.rowMain}><Text style={[styles.rowTitle, { color: colors.foreground }]}>{product.name}</Text><Text style={[styles.rowSub, { color: colors.muted }]}>{product.category} · مخزون {product.stock}</Text></View><View style={styles.priceBox}><Text style={[styles.price, { color: colors.primary }]}>{money(product.price)}</Text><IconSymbol name="plus.circle.fill" size={21} color={colors.primary} /></View></Pressable>; }
-function CustomerRow({ customer, colors }: { customer: Customer; colors: any }) { return <Pressable onPress={() => Alert.alert("حساب العميل", `رصيد ${customer.name}: ${money(customer.balance)}`)} style={[styles.listRow, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={[styles.avatar, { backgroundColor: "#2878C8" }]}><Text style={styles.avatarText}>{customer.name.slice(0, 1)}</Text></View><View style={styles.rowMain}><Text style={[styles.rowTitle, { color: colors.foreground }]}>{customer.name}</Text><Text style={[styles.rowSub, { color: colors.muted }]}>{customer.phone}</Text></View><Text style={[styles.balance, { color: customer.balance ? colors.error : colors.success }]}>{customer.balance ? money(customer.balance) : "لا يوجد"}</Text></Pressable>; }
-function QuickAction({ icon, label, color, onPress }: any) { return <Pressable onPress={onPress} style={({ pressed }) => [styles.quickAction, pressed && { opacity: 0.7 }]}><View style={[styles.quickIcon, { backgroundColor: `${color}18` }]}><IconSymbol name={icon} size={22} color={color} /></View><Text style={styles.quickLabel}>{label}</Text></Pressable>; }
-function TabItem({ icon, label, active, colors, onPress }: any) { return <Pressable onPress={onPress} style={styles.tabItem}><IconSymbol name={icon} size={21} color={active ? colors.primary : colors.muted} /><Text style={[styles.tabLabel, { color: active ? colors.primary : colors.muted }]}>{label}</Text></Pressable>; }
-function ListSection({ title, colors, empty }: any) { return <View><Text style={[styles.sectionTitle, { color: colors.foreground }]}>{title}</Text><View style={[styles.empty, { borderColor: colors.border }]}><IconSymbol name="doc.text.fill" size={28} color={colors.muted} /><Text style={[styles.emptyText, { color: colors.muted }]}>{empty}</Text></View></View>; }
+function Home({ colors, report, lowStock, onInvoice, onCustomer, onProduct, onSection }: any) {
+  const r = report ?? { sales: 0, invoices: 0, expenses: 0, netProfit: 0, lowStock: 0 };
+  return <>
+    <View style={[styles.hero, { backgroundColor: colors.primary }]}><View style={{ flex: 1 }}><Text style={styles.heroSmall}>مبيعات اليوم</Text><Text style={styles.heroValue}>{money(r.sales)}</Text><Text style={styles.heroHint}>صافي الربح: {money(r.netProfit)}</Text></View><View style={styles.heroIcon}><IconSymbol name="chart.bar.fill" size={30} color="#D7F7E9" /></View></View>
+    <View style={styles.grid}><Stat label="فواتير اليوم" value={String(r.invoices)} icon="doc.text.fill" colors={colors} /><Stat label="المصروفات" value={money(r.expenses)} icon="arrow.down.circle.fill" colors={colors} /><Stat label="صافي الربح" value={money(r.netProfit)} icon="chart.bar.fill" colors={colors} /></View>
+    <Pressable onPress={onInvoice} style={[styles.primaryButton, { backgroundColor: colors.foreground }]}><IconSymbol name="plus" size={20} color="#fff" /><Text style={styles.buttonText}>إنشاء فاتورة جديدة</Text></Pressable>
+    <View style={styles.sectionHead}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>اختصارات سريعة</Text></View>
+    <View style={styles.quickGrid}><Quick icon="person.badge.plus" text="عميل جديد" color="#2878C8" onPress={onCustomer} /><Quick icon="shippingbox.fill" text="إضافة صنف" color={colors.primary} onPress={onProduct} /><Quick icon="chart.bar.fill" text="التقارير" color="#8B5CF6" onPress={() => onSection("reports")} /><Quick icon="arrow.down.circle.fill" text="مصروف" color={colors.warning} onPress={() => onSection("expenses")} /></View>
+    <View style={styles.sectionHead}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>تنبيهات المخزون</Text><Text style={[styles.sectionAction, { color: colors.primary }]}>{lowStock.length} صنف منخفض</Text></View>
+    {lowStock.slice(0, 4).map((p: any) => <View key={p.id} style={[styles.cardRow, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={[styles.dot, { backgroundColor: colors.warning }]}><IconSymbol name="exclamationmark.triangle.fill" size={15} color="#fff" /></View><View style={{ flex: 1 }}><Text style={[styles.rowTitle, { color: colors.foreground }]}>{p.name}</Text><Text style={[styles.rowSub, { color: colors.muted }]}>المتوفر {p.stock} · الحد الأدنى {p.minStock}</Text></View><Text style={[styles.warning, { color: colors.warning }]}>منخفض</Text></View>)}
+  </>;
+}
 
-const styles = StyleSheet.create({ page: { flex: 1, direction: "rtl" }, header: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }, kicker: { fontSize: 14, fontWeight: "700", textAlign: "right" }, title: { fontSize: 27, fontWeight: "800", marginTop: 3, textAlign: "right" }, logo: { width: 47, height: 47, borderRadius: 15, alignItems: "center", justifyContent: "center" }, hero: { borderRadius: 22, padding: 20, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }, heroLabel: { color: "#D7F7E9", fontSize: 14, textAlign: "right" }, heroValue: { color: "#FFFFFF", fontSize: 26, fontWeight: "800", marginTop: 8, textAlign: "right" }, heroHint: { color: "#B7E8D3", fontSize: 12, marginTop: 5, textAlign: "right" }, heroIcon: { width: 52, height: 52, borderRadius: 18, backgroundColor: "#FFFFFF20", alignItems: "center", justifyContent: "center" }, statsRow: { flexDirection: "row", gap: 10, marginBottom: 14 }, statCard: { flex: 1, padding: 14, borderRadius: 17, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E4EAE6", alignItems: "flex-end", gap: 5 }, statLabel: { color: "#718078", fontSize: 12, textAlign: "right" }, statValue: { color: "#17221D", fontSize: 16, fontWeight: "800", textAlign: "right" }, primaryButton: { minHeight: 54, borderRadius: 17, flexDirection: "row", gap: 8, justifyContent: "center", alignItems: "center", marginBottom: 20 }, primaryButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "800" }, sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10, marginTop: 4 }, sectionTitle: { fontSize: 17, fontWeight: "800", textAlign: "right", marginBottom: 10 }, sectionAction: { fontSize: 13, fontWeight: "700" }, listRow: { minHeight: 67, borderRadius: 17, borderWidth: 1, padding: 11, flexDirection: "row-reverse", alignItems: "center", gap: 11, marginBottom: 9 }, productDot: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center" }, rowMain: { flex: 1 }, rowTitle: { fontSize: 14, fontWeight: "700", textAlign: "right" }, rowSub: { fontSize: 11, marginTop: 4, textAlign: "right" }, warningText: { fontSize: 11, fontWeight: "800" }, quickGrid: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 10 }, quickAction: { width: "48%", minHeight: 83, borderRadius: 17, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#E4EAE6", padding: 12, flexDirection: "row-reverse", alignItems: "center", gap: 10 }, quickIcon: { width: 40, height: 40, borderRadius: 13, alignItems: "center", justifyContent: "center" }, quickLabel: { color: "#17221D", fontSize: 13, fontWeight: "700", textAlign: "right" }, tabBar: { position: "absolute", bottom: 8, left: 0, right: 0, height: 68, borderRadius: 22, borderWidth: 1, flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-around", paddingHorizontal: 8 }, tabItem: { alignItems: "center", gap: 3, minWidth: 58 }, tabLabel: { fontSize: 10, fontWeight: "700" }, searchBox: { height: 49, borderRadius: 15, borderWidth: 1, flexDirection: "row-reverse", alignItems: "center", paddingHorizontal: 13, gap: 8, marginBottom: 16 }, searchInput: { flex: 1, fontSize: 14, textAlign: "right" }, priceBox: { alignItems: "flex-end", gap: 6 }, price: { fontSize: 12, fontWeight: "800" }, outlineButton: { minHeight: 48, borderRadius: 15, borderWidth: 1, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 7 }, outlineButtonText: { fontWeight: "800" }, balance: { fontSize: 12, fontWeight: "800" }, avatar: { width: 40, height: 40, borderRadius: 14, alignItems: "center", justifyContent: "center" }, avatarText: { color: "#FFFFFF", fontSize: 17, fontWeight: "800" }, modalBackdrop: { flex: 1, backgroundColor: "#00000070", justifyContent: "flex-end" }, modalCard: { borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, paddingBottom: 28, maxHeight: "90%" }, modalHeader: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }, modalTitle: { fontSize: 22, fontWeight: "800" }, invoiceLine: { flexDirection: "row-reverse", justifyContent: "space-between", paddingVertical: 7 }, lineName: { fontSize: 13, textAlign: "right" }, lineTotal: { fontWeight: "800", fontSize: 13 }, totalRow: { marginTop: 10, paddingTop: 14, borderTopWidth: 1, flexDirection: "row-reverse", justifyContent: "space-between", marginBottom: 15 }, totalLabel: { fontSize: 17, fontWeight: "800" }, totalValue: { fontSize: 19, fontWeight: "900" }, formInput: { height: 52, borderRadius: 15, borderWidth: 1, paddingHorizontal: 14, marginBottom: 12, textAlign: "right", fontSize: 15 }, empty: { minHeight: 200, borderWidth: 1, borderStyle: "dashed", borderRadius: 18, alignItems: "center", justifyContent: "center", gap: 10 }, emptyText: { fontSize: 14 }, }
-);
+function Invoices({ colors, invoices, onNew }: any) { return <><Pressable onPress={onNew} style={[styles.primaryButton, { backgroundColor: colors.primary }]}><IconSymbol name="plus" size={19} color="#fff" /><Text style={styles.buttonText}>فاتورة جديدة</Text></Pressable><View style={styles.sectionHead}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>آخر الفواتير</Text></View>{invoices.map((x: any) => <View key={x.id} style={[styles.cardRow, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={[styles.invoiceBadge, { backgroundColor: colors.primary + "18" }]}><IconSymbol name="doc.text.fill" size={17} color={colors.primary} /></View><View style={{ flex: 1 }}><Text style={[styles.rowTitle, { color: colors.foreground }]}>{x.invoiceNo}</Text><Text style={[styles.rowSub, { color: colors.muted }]}>{new Date(x.createdAt).toLocaleString("ar-SA")} · {x.paymentType === "cash" ? "نقدي" : "آجل"}</Text></View><Text style={[styles.price, { color: colors.primary }]}>{money(x.total)}</Text></View>)}</>; }
+
+function Stock({ colors, products, lowStock, search, setSearch, onAdd, onInvoice }: any) { return <><View style={styles.actions}><Pressable onPress={onAdd} style={[styles.primarySmall, { backgroundColor: colors.primary }]}><IconSymbol name="plus" size={18} color="#fff" /><Text style={styles.buttonText}>إضافة صنف</Text></Pressable><Text style={[styles.counter, { color: colors.muted }]}>{products.length} صنف</Text></View><View style={[styles.searchBox, { backgroundColor: colors.surface, borderColor: colors.border }]}><IconSymbol name="magnifyingglass" size={18} color={colors.muted} /><TextInput value={search} onChangeText={setSearch} placeholder="ابحث بالاسم أو الباركود" placeholderTextColor={colors.muted} style={[styles.input, { color: colors.foreground }]} /></View><View style={styles.sectionHead}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>المخزون</Text><Text style={[styles.sectionAction, { color: colors.warning }]}>{lowStock.length} منخفض</Text></View>{products.map((p: any) => <ProductRow key={p.id} p={p} colors={colors} onPress={() => onInvoice(p)} />)}</>; }
+
+function Customers({ colors, customers, search, setSearch, onAdd }: any) { return <><Pressable onPress={onAdd} style={[styles.primaryButton, { backgroundColor: colors.primary }]}><IconSymbol name="person.badge.plus" size={19} color="#fff" /><Text style={styles.buttonText}>إضافة عميل</Text></Pressable><View style={[styles.searchBox, { backgroundColor: colors.surface, borderColor: colors.border }]}><IconSymbol name="magnifyingglass" size={18} color={colors.muted} /><TextInput value={search} onChangeText={setSearch} placeholder="ابحث عن العميل أو الهاتف" placeholderTextColor={colors.muted} style={[styles.input, { color: colors.foreground }]} /></View>{customers.map((c: any) => <View key={c.id} style={[styles.cardRow, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={[styles.avatar, { backgroundColor: colors.primary + "18" }]}><Text style={[styles.avatarText, { color: colors.primary }]}>{c.name.slice(0, 1)}</Text></View><View style={{ flex: 1 }}><Text style={[styles.rowTitle, { color: colors.foreground }]}>{c.name}</Text><Text style={[styles.rowSub, { color: colors.muted }]}>{c.phone || "بدون هاتف"}</Text></View><Text style={[styles.price, { color: colors.warning }]}>{money(c.openingBalance)}</Text></View>)}</>; }
+
+function Reports({ colors, report }: any) { const r = report ?? { sales: 0, purchases: 0, expenses: 0, costOfGoods: 0, grossProfit: 0, netProfit: 0, invoices: 0, lowStock: 0 }; return <><View style={[styles.reportHero, { backgroundColor: colors.surface, borderColor: colors.border }]}><Text style={[styles.reportCaption, { color: colors.muted }]}>تقرير اليوم</Text><Text style={[styles.reportMain, { color: colors.foreground }]}>{money(r.sales)}</Text><Text style={[styles.rowSub, { color: colors.muted }]}>{r.invoices} فاتورة مبيعات</Text></View><ReportRow label="تكلفة البضاعة المباعة" value={r.costOfGoods} colors={colors} /><ReportRow label="مجمل الربح" value={r.grossProfit} colors={colors} /><ReportRow label="المصروفات" value={r.expenses} colors={colors} /><ReportRow label="صافي الربح" value={r.netProfit} colors={colors} /><ReportRow label="المشتريات" value={r.purchases} colors={colors} /><ReportRow label="أصناف منخفضة" value={r.lowStock} colors={colors} suffix=" صنف" /></>; }
+
+function Expenses({ colors, expenses, category, amount, setCategory, setAmount, onSave }: any) { return <><View style={[styles.formCard, { backgroundColor: colors.surface, borderColor: colors.border }]}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>تسجيل مصروف</Text><Field label="نوع المصروف" value={category} onChangeText={setCategory} colors={colors} placeholder="كهرباء، نقل، إيجار..." /><Field label="المبلغ" value={amount} onChangeText={setAmount} colors={colors} placeholder="0.00" keyboardType="decimal-pad" /><Pressable onPress={onSave} style={[styles.primaryButton, { backgroundColor: colors.primary }]}><Text style={styles.buttonText}>حفظ المصروف</Text></Pressable></View><Text style={[styles.sectionTitle, { color: colors.foreground }]}>آخر المصروفات</Text>{expenses.map((x: any) => <View key={x.id} style={[styles.cardRow, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={{ flex: 1 }}><Text style={[styles.rowTitle, { color: colors.foreground }]}>{x.category}</Text><Text style={[styles.rowSub, { color: colors.muted }]}>{new Date(x.createdAt).toLocaleDateString("ar-SA")}</Text></View><Text style={[styles.price, { color: colors.warning }]}>{money(x.amount)}</Text></View>)}</>; }
+
+function Settings({ colors }: any) { return <View style={[styles.formCard, { backgroundColor: colors.surface, borderColor: colors.border }]}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>إعدادات المتجر</Text><Text style={[styles.rowSub, { color: colors.muted }]}>اسم المتجر، رقم الهاتف، عنوان المتجر، العملة ومقاس الإيصال ستُدار من قاعدة البيانات. تم تجهيز واجهة الإعدادات والـ API لذلك.</Text><View style={[styles.settingLine, { borderBottomColor: colors.border }]}><Text style={[styles.rowTitle, { color: colors.foreground }]}>مقاس الإيصال</Text><Text style={[styles.price, { color: colors.primary }]}>58mm / 80mm</Text></View><View style={styles.settingLine}><Text style={[styles.rowTitle, { color: colors.foreground }]}>نوع الطباعة</Text><Text style={[styles.rowSub, { color: colors.muted }]}>PDF + تجهيز للطابعة الحرارية</Text></View></View>; }
+
+function ProductRow({ p, colors, onPress }: any) { const low = Number(p.stock) <= Number(p.minStock); return <Pressable onPress={onPress} style={[styles.cardRow, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={[styles.dot, { backgroundColor: low ? colors.warning : colors.primary }]}><IconSymbol name="shippingbox.fill" size={15} color="#fff" /></View><View style={{ flex: 1 }}><Text style={[styles.rowTitle, { color: colors.foreground }]}>{p.name}</Text><Text style={[styles.rowSub, { color: colors.muted }]}>{p.unit} · مخزون {p.stock} · شراء {money(p.purchasePrice)}</Text></View><View style={{ alignItems: "flex-end" }}><Text style={[styles.price, { color: colors.primary }]}>{money(p.salePrice)}</Text><Text style={[styles.rowSub, { color: low ? colors.warning : colors.muted }]}>{low ? "منخفض" : "متوفر"}</Text></View></Pressable>; }
+function ReportRow({ label, value, colors, suffix = "" }: any) { return <View style={[styles.reportRow, { borderBottomColor: colors.border }]}><Text style={[styles.rowTitle, { color: colors.foreground }]}>{label}</Text><Text style={[styles.price, { color: colors.primary }]}>{typeof value === "number" && suffix ? `${value}${suffix}` : money(value)}</Text></View>; }
+function Stat({ label, value, icon, colors }: any) { return <View style={[styles.stat, { backgroundColor: colors.surface, borderColor: colors.border }]}><IconSymbol name={icon} size={19} color={colors.primary} /><Text style={[styles.statLabel, { color: colors.muted }]}>{label}</Text><Text style={[styles.statValue, { color: colors.foreground }]}>{value}</Text></View>; }
+function Quick({ icon, text, color, onPress }: any) { return <Pressable onPress={onPress} style={styles.quick}><View style={[styles.quickIcon, { backgroundColor: color + "18" }]}><IconSymbol name={icon} size={21} color={color} /></View><Text style={styles.quickText}>{text}</Text></Pressable>; }
+function Tab({ icon, label, active, colors, onPress }: any) { return <Pressable onPress={onPress} style={styles.tab}><IconSymbol name={icon} size={21} color={active ? colors.primary : colors.muted} /><Text style={[styles.tabText, { color: active ? colors.primary : colors.muted }]}>{label}</Text></Pressable>; }
+function Pill({ label, active, colors, onPress }: any) { return <Pressable onPress={onPress} style={[styles.pill, { borderColor: active ? colors.primary : colors.border, backgroundColor: active ? colors.primary + "12" : colors.surface }]}><Text style={{ color: active ? colors.primary : colors.muted, fontWeight: "700" }}>{label}</Text></Pressable>; }
+function Field({ label, value, onChangeText, colors, placeholder, keyboardType }: any) { return <View style={{ flex: 1, marginBottom: 10 }}><Text style={[styles.label, { color: colors.muted }]}>{label}</Text><TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={colors.muted} keyboardType={keyboardType} style={[styles.formInput, { borderColor: colors.border, backgroundColor: colors.surface, color: colors.foreground }]} /></View>; }
+function ModalHeader({ title, colors, close }: any) { return <View style={styles.modalHeader}><Text style={[styles.modalTitle, { color: colors.foreground }]}>{title}</Text><Pressable onPress={close} style={styles.close}><IconSymbol name="xmark" size={20} color={colors.muted} /></Pressable></View>; }
+
+const styles = StyleSheet.create({ page: { flex: 1 }, scroll: { paddingBottom: 20 }, header: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }, brand: { fontSize: 14, fontWeight: "800" }, title: { fontSize: 25, fontWeight: "900", marginTop: 2 }, logo: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center" }, hero: { borderRadius: 24, padding: 20, flexDirection: "row-reverse", alignItems: "center", marginBottom: 14, shadowOpacity: .12, shadowRadius: 14, elevation: 3 }, heroSmall: { color: "#D7F7E9", fontSize: 13, fontWeight: "700", textAlign: "right" }, heroValue: { color: "#fff", fontSize: 30, fontWeight: "900", marginTop: 4, textAlign: "right" }, heroHint: { color: "#E7FFF3", marginTop: 6, fontWeight: "600", textAlign: "right" }, heroIcon: { width: 58, height: 58, borderRadius: 20, backgroundColor: "#ffffff18", alignItems: "center", justifyContent: "center", marginLeft: 14 }, grid: { flexDirection: "row", gap: 9, marginBottom: 14 }, stat: { flex: 1, borderWidth: 1, borderRadius: 18, padding: 13, minHeight: 90 }, statLabel: { fontSize: 11, marginTop: 8 }, statValue: { fontSize: 16, fontWeight: "900", marginTop: 4 }, primaryButton: { minHeight: 52, borderRadius: 16, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8, marginBottom: 16 }, primarySmall: { minHeight: 44, borderRadius: 14, paddingHorizontal: 14, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6 }, buttonText: { color: "#fff", fontWeight: "900", fontSize: 15 }, sectionHead: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginTop: 9, marginBottom: 10 }, sectionTitle: { fontSize: 17, fontWeight: "900" }, sectionAction: { fontSize: 12, fontWeight: "800" }, quickGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 12 }, quick: { width: "47.5%", backgroundColor: "#ffffff", borderRadius: 18, padding: 13, flexDirection: "row-reverse", alignItems: "center", gap: 10, elevation: 1 }, quickIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" }, quickText: { fontWeight: "800", color: "#17221D" }, cardRow: { borderWidth: 1, borderRadius: 17, padding: 13, marginBottom: 9, flexDirection: "row-reverse", alignItems: "center", gap: 10 }, dot: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center" }, invoiceBadge: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center" }, avatar: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" }, avatarText: { fontSize: 18, fontWeight: "900" }, rowTitle: { fontSize: 14, fontWeight: "800", textAlign: "right" }, rowSub: { fontSize: 11, marginTop: 4, textAlign: "right" }, price: { fontSize: 13, fontWeight: "900" }, warning: { fontSize: 11, fontWeight: "900" }, actions: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }, counter: { fontWeight: "800" }, searchBox: { height: 50, borderRadius: 15, borderWidth: 1, flexDirection: "row-reverse", alignItems: "center", paddingHorizontal: 13, gap: 8, marginBottom: 12 }, input: { flex: 1, fontSize: 14, textAlign: "right" }, reportHero: { borderWidth: 1, borderRadius: 22, padding: 20, marginBottom: 12 }, reportCaption: { fontWeight: "700" }, reportMain: { fontSize: 30, fontWeight: "900", marginTop: 5 }, reportRow: { minHeight: 54, borderBottomWidth: 1, flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" }, formCard: { borderWidth: 1, borderRadius: 20, padding: 15, marginBottom: 16 }, label: { fontSize: 11, fontWeight: "800", textAlign: "right", marginBottom: 6 }, formInput: { borderWidth: 1, borderRadius: 13, minHeight: 46, paddingHorizontal: 12, textAlign: "right", fontSize: 14 }, two: { flexDirection: "row-reverse", gap: 9 }, modal: { width: "100%", borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 18, maxHeight: "92%" }, backdrop: { flex: 1, backgroundColor: "#00000066", justifyContent: "flex-end" }, modalHeader: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }, modalTitle: { fontSize: 19, fontWeight: "900" }, close: { width: 38, height: 38, borderRadius: 13, backgroundColor: "#00000008", alignItems: "center", justifyContent: "center" }, pill: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 13, paddingVertical: 8 }, invoiceLine: { flexDirection: "row-reverse", alignItems: "center", paddingVertical: 9, borderBottomWidth: 1 }, lineTotal: { fontWeight: "900", fontSize: 14 }, total: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", paddingVertical: 14 }, totalLabel: { fontSize: 13, fontWeight: "800" }, totalValue: { fontSize: 22, fontWeight: "900" }, tabBar: { position: "absolute", bottom: 4, left: 0, right: 0, borderWidth: 1, borderRadius: 22, height: 66, flexDirection: "row", alignItems: "center", justifyContent: "space-around", elevation: 8 }, tab: { alignItems: "center", justifyContent: "center", minWidth: 55, gap: 3 }, tabText: { fontSize: 9, fontWeight: "800" }, settingLine: { minHeight: 55, borderBottomWidth: 1, flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between" }, statLabel: { fontSize: 11 }
+});
