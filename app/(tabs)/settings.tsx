@@ -1,76 +1,166 @@
-import { useEffect, useState } from "react";
-import { Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { useEffect, useMemo, useState, type ComponentProps } from "react";
+import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
 
+type MenuItem = { title: string; icon: string; key: string; description?: string };
+type IconName = ComponentProps<typeof IconSymbol>["name"];
+
+const menuItems: MenuItem[] = [
+  { title: "البيانات الشخصية", icon: "person.crop.rectangle.fill", key: "profile" },
+  { title: "خيارات الطباعة", icon: "printer.fill", key: "printing" },
+  { title: "خيارات الأمان", icon: "lock.fill", key: "security" },
+  { title: "المستخدمين والصلاحيات", icon: "person.2.fill", key: "users" },
+  { title: "التصنيفات", icon: "square.grid.2x2.fill", key: "categories" },
+  { title: "مجموعة الصنف", icon: "cart.fill", key: "groups" },
+  { title: "وحدات القياس", icon: "cube.fill", key: "units" },
+  { title: "خيارات حفظ البيانات", icon: "externaldrive.fill", key: "backup" },
+  { title: "الطابعة الحرارية", icon: "printer.fill", key: "thermal" },
+  { title: "الضريبة", icon: "percent", key: "tax" },
+  { title: "طابعة باركود الأصناف", icon: "barcode.viewfinder", key: "barcode" },
+  { title: "خيارات الإشعارات", icon: "bell.fill", key: "notifications" },
+  { title: "خيارات أخرى", icon: "ellipsis.circle.fill", key: "other" },
+  { title: "تفعيل الاشتراك", icon: "person.badge.key.fill", key: "subscription" },
+];
+
 export default function SettingsScreen() {
   const colors = useColors();
   const utils = trpc.useUtils();
   const { data } = trpc.settings.get.useQuery();
-  const update = trpc.settings.update.useMutation({ onSuccess: () => { utils.settings.get.invalidate(); Alert.alert("تم الحفظ", "تم حفظ إعدادات المتجر والطباعة."); }, onError: (e) => Alert.alert("تعذر الحفظ", e.message) });
+  const update = trpc.settings.update.useMutation({
+    onSuccess: () => { utils.settings.get.invalidate(); setNotice("تم حفظ الإعدادات بنجاح", "success"); },
+    onError: (e) => setNotice(e.message || "تعذر حفظ الإعدادات", "error"),
+  });
   const [storeName, setStoreName] = useState("بقالة العزي للمواد الغذائية");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [currency, setCurrency] = useState("ر.س");
   const [paper, setPaper] = useState<"58mm" | "80mm">("80mm");
+  const [autoPrint, setAutoPrint] = useState(false);
+  const [showLogo, setShowLogo] = useState(true);
   const [showUnitPrice, setShowUnitPrice] = useState(false);
   const [lowStockAlerts, setLowStockAlerts] = useState(true);
-  const [autoPrint, setAutoPrint] = useState(false);
+  const [notifications, setNotifications] = useState(true);
+  const [taxEnabled, setTaxEnabled] = useState(false);
+  const [taxRate, setTaxRate] = useState("0");
   const [copies, setCopies] = useState("1");
-  const [showLogo, setShowLogo] = useState(true);
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [notice, setNoticeState] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
-  useEffect(() => { if (!data) return; setStoreName(data.storeName); setPhone(data.phone ?? ""); setAddress(data.address ?? ""); setCurrency(data.currency); setPaper(data.receiptWidth); }, [data]);
+  const setNotice = (text: string, type: "success" | "error") => {
+    setNoticeState({ text, type });
+    setTimeout(() => setNoticeState(null), 2600);
+  };
+
+  useEffect(() => {
+    if (!data) return;
+    setStoreName(data.storeName || "بقالة العزي للمواد الغذائية");
+    setPhone(data.phone ?? "");
+    setAddress(data.address ?? "");
+    setCurrency(data.currency || "ر.س");
+    setPaper(data.receiptWidth === "58mm" ? "58mm" : "80mm");
+  }, [data]);
+
   const save = () => update.mutate({ storeName: storeName.trim(), phone: phone.trim() || undefined, address: address.trim() || undefined, currency: currency.trim() || "ر.س", receiptWidth: paper });
 
+  const menuTitle = useMemo(() => menuItems.find(x => x.key === activeMenu)?.title ?? "", [activeMenu]);
+
+  const openMenu = (key: string) => {
+    if (["profile", "printing", "thermal", "backup", "notifications", "tax", "other"].includes(key)) setActiveMenu(key);
+    else Alert.alert("الإعدادات", `قسم ${menuItems.find(x => x.key === key)?.title} جاهز للربط مع بيانات التطبيق.`);
+  };
+
   return (
-    <ScreenContainer className="px-4 pt-3" safeAreaClassName="bg-background">
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.hero}>
-            <View style={{ flex: 1 }}><Text style={[styles.kicker, { color: colors.primary }]}>إدارة المتجر</Text><Text style={[styles.title, { color: colors.foreground }]}>الإعدادات</Text><Text style={[styles.subtitle, { color: colors.muted }]}>كل إعدادات بقالة العزي في مكان واحد</Text></View>
-            <View style={[styles.heroIcon, { backgroundColor: colors.primary }]}><IconSymbol name="gearshape.fill" size={25} color="#fff" /></View>
+    <ScreenContainer className="px-0 pt-0" safeAreaClassName="bg-background">
+      <View style={[styles.header, { backgroundColor: colors.primary }]}>
+        <Pressable onPress={() => setActiveMenu(null)} style={styles.back}><IconSymbol name="chevron.right" size={29} color="#fff" /></Pressable>
+        <Text style={styles.headerTitle}>إعدادات</Text>
+        <View style={styles.headerSpacer} />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        {menuItems.map(item => (
+          <Pressable key={item.key} onPress={() => openMenu(item.key)} style={({ pressed }) => [styles.menuRow, { borderBottomColor: colors.border, backgroundColor: colors.background }, pressed && { opacity: 0.65 }]}>
+            <View style={[styles.menuIcon, { backgroundColor: colors.primary }]}><IconSymbol name={item.icon as IconName} size={21} color="#fff" /></View>
+            <Text style={[styles.menuText, { color: colors.foreground }]}>{item.title}</Text>
+            <IconSymbol name="chevron.left" size={18} color={colors.muted} />
+          </Pressable>
+        ))}
+        <View style={{ height: 40 }} />
+      </ScrollView>
+
+      <Pressable onPress={save} disabled={update.isPending} style={[styles.saveButton, { backgroundColor: colors.primary }, update.isPending && { opacity: 0.6 }]}>
+        <Text style={styles.saveText}>{update.isPending ? "جارٍ الحفظ..." : "حفظ الإعدادات"}</Text>
+      </Pressable>
+
+      {notice && <View pointerEvents="none" style={[styles.notice, { backgroundColor: notice.type === "error" ? "#B42318" : colors.primary }]}><IconSymbol name={notice.type === "error" ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"} size={19} color="#fff" /><Text style={styles.noticeText}>{notice.text}</Text></View>}
+
+      <Modal visible={!!activeMenu} transparent animationType="slide" onRequestClose={() => setActiveMenu(null)}>
+        <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === "android" ? "height" : "padding"}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setActiveMenu(null)} />
+          <View style={[styles.sheet, { backgroundColor: colors.background }]}>
+            <View style={styles.sheetHeader}>
+              <Text style={[styles.sheetTitle, { color: colors.foreground }]}>{menuTitle}</Text>
+              <Pressable onPress={() => setActiveMenu(null)} style={styles.close}><Text style={{ fontSize: 25, color: colors.muted }}>×</Text></Pressable>
+            </View>
+            <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={styles.form}>
+              {activeMenu === "profile" && <>
+                <Text style={[styles.label, { color: colors.foreground }]}>اسم المحل</Text><TextInput value={storeName} onChangeText={setStoreName} style={[styles.input, { borderColor: colors.border, color: colors.foreground }]} />
+                <Text style={[styles.label, { color: colors.foreground }]}>رقم الهاتف</Text><TextInput value={phone} onChangeText={setPhone} keyboardType="phone-pad" style={[styles.input, { borderColor: colors.border, color: colors.foreground }]} />
+                <Text style={[styles.label, { color: colors.foreground }]}>العنوان</Text><TextInput value={address} onChangeText={setAddress} style={[styles.input, { borderColor: colors.border, color: colors.foreground }]} />
+              </>}
+              {activeMenu === "printing" && <>
+                <Text style={[styles.label, { color: colors.foreground }]}>مقاس الورق الحراري</Text><View style={styles.segment}><Pressable onPress={() => setPaper("58mm")} style={[styles.seg, paper === "58mm" && { backgroundColor: colors.primary }]}><Text style={{ color: paper === "58mm" ? "#fff" : colors.foreground }}>58mm</Text></Pressable><Pressable onPress={() => setPaper("80mm")} style={[styles.seg, paper === "80mm" && { backgroundColor: colors.primary }]}><Text style={{ color: paper === "80mm" ? "#fff" : colors.foreground }}>80mm</Text></Pressable></View>
+                <Row label="طباعة تلقائية" value={autoPrint} onChange={setAutoPrint} /><Row label="إظهار الشعار" value={showLogo} onChange={setShowLogo} /><Row label="إظهار سعر الوحدة" value={showUnitPrice} onChange={setShowUnitPrice} />
+              </>}
+              {activeMenu === "thermal" && <><Text style={[styles.help, { color: colors.muted }]}>يمكن ضبط الطابعة الحرارية الصغيرة من هنا، وستبقى الإعدادات محفوظة على الجهاز.</Text><Row label="الطابعة الحرارية مفعلة" value={autoPrint} onChange={setAutoPrint} /></>}
+              {activeMenu === "backup" && <Text style={[styles.help, { color: colors.muted }]}>البيانات المحلية تحفظ على الجهاز. لن يتم استبدالها تلقائيًا. استخدم النسخ الاحتياطي قبل إعادة ضبط البيانات.</Text>}
+              {activeMenu === "notifications" && <><Row label="الإشعارات" value={notifications} onChange={setNotifications} /><Row label="تنبيه المخزون المنخفض" value={lowStockAlerts} onChange={setLowStockAlerts} /></>}
+              {activeMenu === "tax" && <><Row label="تفعيل الضريبة" value={taxEnabled} onChange={setTaxEnabled} /><Text style={[styles.label, { color: colors.foreground }]}>نسبة الضريبة</Text><TextInput value={taxRate} onChangeText={setTaxRate} keyboardType="decimal-pad" style={[styles.input, { borderColor: colors.border, color: colors.foreground }]} /></>}
+              {activeMenu === "other" && <><Text style={[styles.label, { color: colors.foreground }]}>عدد نسخ الفاتورة</Text><TextInput value={copies} onChangeText={setCopies} keyboardType="number-pad" style={[styles.input, { borderColor: colors.border, color: colors.foreground }]} /></>}
+              <View style={{ height: 20 }} />
+              <Pressable onPress={save} disabled={update.isPending} style={[styles.saveSheet, { backgroundColor: colors.primary }]}><Text style={styles.saveText}>{update.isPending ? "جارٍ الحفظ..." : "حفظ"}</Text></Pressable>
+              <View style={{ height: 80 }} />
+            </ScrollView>
           </View>
-
-          <Section title="بيانات المحل" subtitle="المعلومات التي تظهر في الفواتير والتقارير" icon="building.2.fill" colors={colors}>
-            <Field label="اسم المحل" value={storeName} onChangeText={setStoreName} colors={colors} />
-            <Field label="رقم الهاتف" value={phone} onChangeText={setPhone} keyboardType="phone-pad" colors={colors} />
-            <Field label="العنوان" value={address} onChangeText={setAddress} colors={colors} />
-            <Field label="العملة" value={currency} onChangeText={setCurrency} colors={colors} />
-            <Pressable onPress={() => Alert.alert("الشعار", "سيتم ربط اختيار صورة الشعار في خطوة الطباعة التالية.")} style={[styles.action, { backgroundColor: colors.background, borderColor: colors.border }]}><IconSymbol name="photo" size={20} color={colors.primary} /><Text style={[styles.actionText, { color: colors.foreground }]}>تعديل شعار المحل</Text><IconSymbol name="chevron.left" size={18} color={colors.muted} /></Pressable>
-          </Section>
-
-          <Section title="الطابعة والفاتورة" subtitle="إعدادات الإيصال الحراري والطباعة" icon="printer.fill" colors={colors}>
-            <Text style={[styles.label, { color: colors.muted }]}>مقاس الورق</Text>
-            <View style={styles.segment}>{(["58mm", "80mm"] as const).map(v => <Pressable key={v} onPress={() => setPaper(v)} style={[styles.segmentItem, { borderColor: colors.border, backgroundColor: paper === v ? colors.primary : colors.background }]}><Text style={{ color: paper === v ? "#fff" : colors.foreground, fontWeight: "900" }}>{v}</Text></Pressable>)}</View>
-            <SettingRow title="الطباعة التلقائية" description="طباعة الإيصال بعد حفظ الفاتورة" colors={colors}><Switch value={autoPrint} onValueChange={setAutoPrint} /></SettingRow>
-            <SettingRow title="إظهار الشعار" description="إظهار شعار المحل أعلى الإيصال" colors={colors}><Switch value={showLogo} onValueChange={setShowLogo} /></SettingRow>
-            <SettingRow title="إظهار سعر الوحدة" description="عرض السعر بجانب الصنف في الإيصال" colors={colors}><Switch value={showUnitPrice} onValueChange={setShowUnitPrice} /></SettingRow>
-            <Field label="عدد نسخ الإيصال" value={copies} onChangeText={setCopies} keyboardType="number-pad" colors={colors} />
-          </Section>
-
-          <Section title="التقارير والمخزون" subtitle="التحكم في التنبيهات وطريقة عرض النتائج" icon="chart.bar.fill" colors={colors}>
-            <SettingRow title="تنبيه المخزون المنخفض" description="تنبيه عند وصول الصنف للحد الأدنى" colors={colors}><Switch value={lowStockAlerts} onValueChange={setLowStockAlerts} /></SettingRow>
-            <ActionRow title="التقارير اليومية والشهرية والسنوية" subtitle="تقارير المبيعات والمشتريات والمصروفات والأرباح" icon="chart.pie.fill" colors={colors} onPress={() => Alert.alert("التقارير", "يمكنك فتح تبويب التقارير لاختيار الفترة المطلوبة.")} />
-          </Section>
-
-          <Section title="البيانات والنسخ الاحتياطي" subtitle="حماية بيانات البقالة وإدارتها" icon="externaldrive.fill" colors={colors}>
-            <ActionRow title="نسخ احتياطي" subtitle="حفظ نسخة آمنة من بيانات التطبيق" icon="arrow.down.doc.fill" colors={colors} onPress={() => Alert.alert("النسخ الاحتياطي", "سيتم تنفيذ النسخ الاحتياطي من قاعدة البيانات في المرحلة التالية.")} />
-            <ActionRow title="استعادة البيانات" subtitle="استرجاع نسخة محفوظة" icon="arrow.up.doc.fill" colors={colors} onPress={() => Alert.alert("استعادة البيانات", "اختر ملف النسخة الاحتياطية لاستعادته.")} />
-            <ActionRow title="تحديث البيانات" subtitle="إعادة تحميل البيانات من الخادم" icon="arrow.clockwise" colors={colors} onPress={() => { utils.invalidate(); Alert.alert("تم التحديث", "تم طلب تحديث بيانات التطبيق."); }} />
-          </Section>
-
-          <Pressable disabled={update.isPending} onPress={save} style={({ pressed }) => [styles.save, { backgroundColor: colors.primary }, pressed && { opacity: 0.8 }, update.isPending && { opacity: 0.6 }]}><IconSymbol name="checkmark" size={20} color="#fff" /><Text style={styles.saveText}>{update.isPending ? "جارٍ الحفظ..." : "حفظ الإعدادات"}</Text></Pressable>
-          <Text style={[styles.version, { color: colors.muted }]}>بقالة العزي • إعدادات احترافية</Text>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScreenContainer>
   );
 }
 
-function Section({ title, subtitle, icon, colors, children }: any) { return <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={styles.sectionHead}><View style={[styles.sectionIcon, { backgroundColor: colors.primary + "18" }]}><IconSymbol name={icon} size={19} color={colors.primary} /></View><View style={{ flex: 1 }}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>{title}</Text><Text style={[styles.sectionSub, { color: colors.muted }]}>{subtitle}</Text></View></View>{children}</View>; }
-function Field({ label, colors, ...props }: any) { return <View style={styles.field}><Text style={[styles.label, { color: colors.muted }]}>{label}</Text><TextInput {...props} placeholderTextColor={colors.muted} style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]} /> </View>; }
-function SettingRow({ title, description, colors, children }: any) { return <View style={[styles.settingRow, { borderTopColor: colors.border }]}><View style={styles.rowText}><Text style={[styles.rowTitle, { color: colors.foreground }]}>{title}</Text><Text style={[styles.rowSub, { color: colors.muted }]}>{description}</Text></View>{children}</View>; }
-function ActionRow({ title, subtitle, icon, colors, onPress }: any) { return <Pressable onPress={onPress} style={[styles.actionRow, { borderTopColor: colors.border }]}><View style={[styles.actionIcon, { backgroundColor: colors.background }]}><IconSymbol name={icon} size={18} color={colors.primary} /></View><View style={styles.rowText}><Text style={[styles.rowTitle, { color: colors.foreground }]}>{title}</Text><Text style={[styles.rowSub, { color: colors.muted }]}>{subtitle}</Text></View><IconSymbol name="chevron.left" size={18} color={colors.muted} /></Pressable>; }
-const styles = StyleSheet.create({ content: { paddingBottom: 42, gap: 14 }, hero: { flexDirection: "row", alignItems: "center", marginBottom: 4, gap: 12 }, kicker: { fontSize: 13, fontWeight: "900", marginBottom: 2 }, title: { fontSize: 30, fontWeight: "900" }, subtitle: { fontSize: 12, marginTop: 3 }, heroIcon: { width: 54, height: 54, borderRadius: 18, alignItems: "center", justifyContent: "center" }, section: { borderWidth: 1, borderRadius: 22, padding: 15, gap: 14 }, sectionHead: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 1 }, sectionIcon: { width: 40, height: 40, borderRadius: 13, alignItems: "center", justifyContent: "center" }, sectionTitle: { fontSize: 17, fontWeight: "900" }, sectionSub: { fontSize: 11, marginTop: 2, lineHeight: 16 }, field: { gap: 7 }, label: { fontSize: 12, fontWeight: "800" }, input: { minHeight: 50, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, textAlign: "right", fontSize: 15 }, segment: { flexDirection: "row", gap: 8 }, segmentItem: { flex: 1, minHeight: 46, borderWidth: 1, borderRadius: 13, alignItems: "center", justifyContent: "center" }, settingRow: { borderTopWidth: 1, paddingTop: 13, flexDirection: "row", alignItems: "center", gap: 12 }, actionRow: { borderTopWidth: 1, paddingTop: 13, flexDirection: "row", alignItems: "center", gap: 12 }, action: { minHeight: 48, borderWidth: 1, borderRadius: 14, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 13 }, actionText: { flex: 1, fontSize: 14, fontWeight: "900" }, rowText: { flex: 1, gap: 3 }, rowTitle: { fontSize: 14, fontWeight: "900" }, rowSub: { fontSize: 11, lineHeight: 17 }, actionIcon: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" }, save: { minHeight: 54, borderRadius: 17, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }, saveText: { color: "#fff", fontSize: 16, fontWeight: "900" }, version: { textAlign: "center", fontSize: 11, marginTop: 2 } });
+function Row({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  return <View style={styles.row}><Text style={styles.rowText}>{label}</Text><Switch value={value} onValueChange={onChange} /></View>;
+}
+
+const styles = StyleSheet.create({
+  header: { height: 112, paddingHorizontal: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  back: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  headerTitle: { color: "#fff", fontSize: 28, fontWeight: "800", textAlign: "center" },
+  headerSpacer: { width: 44 },
+  list: { paddingBottom: 80 },
+  menuRow: { minHeight: 72, paddingHorizontal: 18, flexDirection: "row", alignItems: "center", borderBottomWidth: 1 },
+  menuIcon: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", marginRight: 14 },
+  menuText: { flex: 1, fontSize: 20, textAlign: "left" },
+  saveButton: { marginHorizontal: 18, marginBottom: 12, height: 52, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  saveSheet: { height: 52, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  saveText: { color: "#fff", fontSize: 18, fontWeight: "800" },
+  notice: { position: "absolute", left: 14, right: 14, bottom: 20, minHeight: 48, borderRadius: 12, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", gap: 8, zIndex: 10000 },
+  noticeText: { flex: 1, color: "#fff", fontSize: 13, textAlign: "right" },
+  modalRoot: { flex: 1, justifyContent: "flex-end" },
+  modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.35)" },
+  sheet: { maxHeight: "88%", borderTopLeftRadius: 22, borderTopRightRadius: 22, overflow: "hidden" },
+  sheetHeader: { minHeight: 66, paddingHorizontal: 18, flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between" },
+  sheetTitle: { fontSize: 22, fontWeight: "800" },
+  close: { width: 42, height: 42, borderRadius: 21, backgroundColor: "#eee", alignItems: "center", justifyContent: "center" },
+  form: { paddingHorizontal: 18, paddingBottom: 40 },
+  label: { fontSize: 16, fontWeight: "700", marginTop: 12, marginBottom: 7, textAlign: "right" },
+  input: { minHeight: 50, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, fontSize: 17, textAlign: "right" },
+  help: { fontSize: 15, lineHeight: 24, textAlign: "right", padding: 12 },
+  segment: { flexDirection: "row", gap: 8 },
+  seg: { flex: 1, minHeight: 48, borderRadius: 10, borderWidth: 1, borderColor: "#ddd", alignItems: "center", justifyContent: "center" },
+  row: { minHeight: 58, flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#eee" },
+  rowText: { fontSize: 16, textAlign: "right" },
+});
