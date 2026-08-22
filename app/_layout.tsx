@@ -5,7 +5,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
-import { Platform } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import "@/lib/_core/nativewind-pressable";
 import { ThemeProvider } from "@/lib/theme-provider";
 import {
@@ -18,24 +18,29 @@ import type { EdgeInsets, Metrics, Rect } from "react-native-safe-area-context";
 
 import { trpc, createTRPCClient } from "@/lib/trpc";
 import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-runtime";
+import { clearLocalStorageNotice, getLocalStorageNotice, loadLocalState } from "@/lib/local-store";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
 
-export const unstable_settings = {
-  anchor: "(tabs)",
-};
+export const unstable_settings = { anchor: "(tabs)" };
 
 export default function RootLayout() {
   const initialInsets = initialWindowMetrics?.insets ?? DEFAULT_WEB_INSETS;
   const initialFrame = initialWindowMetrics?.frame ?? DEFAULT_WEB_FRAME;
-
   const [insets, setInsets] = useState<EdgeInsets>(initialInsets);
   const [frame, setFrame] = useState<Rect>(initialFrame);
+  const [storageNotice, setStorageNotice] = useState("");
 
-  // Initialize Manus runtime for cookie injection from parent container
   useEffect(() => {
     initManusRuntime();
+    // Run one safe local-store health check at startup. It never resets user data.
+    loadLocalState().then(() => {
+      const notice = getLocalStorageNotice();
+      if (notice && !notice.startsWith("تم إنشاء البيانات الافتراضية")) setStorageNotice(notice);
+    }).catch(() => {
+      setStorageNotice("تعذر فحص قاعدة البيانات المحلية. لم يتم استبدال أي بيانات.");
+    });
   }, []);
 
   const handleSafeAreaUpdate = useCallback((metrics: Metrics) => {
@@ -49,23 +54,11 @@ export default function RootLayout() {
     return () => unsubscribe();
   }, [handleSafeAreaUpdate]);
 
-  // Create clients once and reuse them
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            // Disable automatic refetching on window focus for mobile
-            refetchOnWindowFocus: false,
-            // Retry failed requests once
-            retry: 1,
-          },
-        },
-      }),
-  );
+  const [queryClient] = useState(() => new QueryClient({
+    defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
+  }));
   const [trpcClient] = useState(() => createTRPCClient());
 
-  // Ensure minimum 8px padding for top and bottom on mobile
   const providerInitialMetrics = useMemo(() => {
     const metrics = initialWindowMetrics ?? { insets: initialInsets, frame: initialFrame };
     return {
@@ -82,9 +75,24 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
         <QueryClientProvider client={queryClient}>
-          {/* Default to hiding native headers so raw route segments don't appear (e.g. "(tabs)", "products/[id]"). */}
-          {/* If a screen needs the native header, explicitly enable it and set a human title via Stack.Screen options. */}
-          {/* in order for ios apps tab switching to work properly, use presentation: "fullScreenModal" for login page, whenever you decide to use presentation: "modal*/}
+          {storageNotice ? (
+            <View style={styles.notice}>
+              <View style={styles.noticeTextWrap}>
+                <Text style={styles.noticeTitle}>تنبيه قاعدة البيانات</Text>
+                <Text style={styles.noticeText}>{storageNotice}</Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => {
+                  clearLocalStorageNotice();
+                  setStorageNotice("");
+                }}
+                style={styles.noticeClose}
+              >
+                <Text style={styles.noticeCloseText}>إغلاق</Text>
+              </Pressable>
+            </View>
+          ) : null}
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="oauth/callback" />
@@ -96,15 +104,12 @@ export default function RootLayout() {
   );
 
   const shouldOverrideSafeArea = Platform.OS === "web";
-
   if (shouldOverrideSafeArea) {
     return (
       <ThemeProvider>
         <SafeAreaProvider initialMetrics={providerInitialMetrics}>
           <SafeAreaFrameContext.Provider value={frame}>
-            <SafeAreaInsetsContext.Provider value={insets}>
-              {content}
-            </SafeAreaInsetsContext.Provider>
+            <SafeAreaInsetsContext.Provider value={insets}>{content}</SafeAreaInsetsContext.Provider>
           </SafeAreaFrameContext.Provider>
         </SafeAreaProvider>
       </ThemeProvider>
@@ -117,3 +122,23 @@ export default function RootLayout() {
     </ThemeProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  notice: {
+    minHeight: 78,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: "#fff3cd",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5b94f",
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 10,
+    zIndex: 9999,
+  },
+  noticeTextWrap: { flex: 1, alignItems: "flex-end" },
+  noticeTitle: { fontSize: 14, fontWeight: "800", color: "#7a4f00", textAlign: "right" },
+  noticeText: { marginTop: 2, fontSize: 12, lineHeight: 18, color: "#5d4a22", textAlign: "right" },
+  noticeClose: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8, backgroundColor: "#fff" },
+  noticeCloseText: { fontSize: 12, fontWeight: "700", color: "#7a4f00" },
+});
