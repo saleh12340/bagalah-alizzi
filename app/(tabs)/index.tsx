@@ -153,6 +153,7 @@ export default function HomeScreen() {
               products={products}
               customers={customers}
               colors={colors}
+              storeName={settingsQ.data?.storeName}
             />
           )}
 
@@ -173,10 +174,11 @@ export default function HomeScreen() {
   );
 }
 
-function InvoiceView({ onBack, products, customers, colors }: any) {
+function InvoiceView({ onBack, products, customers, colors, storeName }: any) {
   const [lines, setLines] = useState<any[]>([]);
   const [customer, setCustomer] = useState<any>(null);
   const [notes, setNotes] = useState("");
+  const [editId, setEditId] = useState<number | null>(null);
 
   const total = useMemo(() => lines.reduce((s, x) => s + Number(x.unitPrice || 0) * Number(x.quantity || 0), 0), [lines]);
 
@@ -190,6 +192,20 @@ function InvoiceView({ onBack, products, customers, colors }: any) {
     }
   });
 
+  const updateSale = trpc.sales.update.useMutation({
+    onSuccess: async (d) => {
+      console.log('sale updated', d);
+    },
+    onError: (err) => console.warn('sale update failed', err),
+  });
+
+  const deleteSale = trpc.sales.delete.useMutation({
+    onSuccess: async () => {
+      console.log('sale deleted');
+    },
+    onError: (err) => console.warn('sale delete failed', err),
+  });
+
   function addLine() {
     setLines((old) => [...old, { description: "", quantity: 1, unitPrice: 0 }]);
   }
@@ -199,34 +215,59 @@ function InvoiceView({ onBack, products, customers, colors }: any) {
     const payload = lines.map((l) => ({ name: l.description || "-", quantity: Number(l.quantity) || 0, unitPrice: Number(l.unitPrice) || 0 }));
     try {
       // Persist invoice to backend first
-      await createSale.mutateAsync({ items: payload, notes: notes || undefined, customerId: undefined });
+      if (editId) {
+        await updateSale.mutateAsync({ id: editId, items: payload, notes: notes || undefined });
+      } else {
+        await createSale.mutateAsync({ items: payload, notes: notes || undefined, customerId: undefined });
+      }
 
       // Then generate & share PDF
-      const uri = await shareInvoicePdf(payload, undefined, undefined, "80mm");
+      const uri = await shareInvoicePdf(payload, undefined, undefined, "80mm", { storeName });
       if (uri) {
         Alert.alert("تم", "تم توليد ومشاركة الفاتورة.");
         return;
       }
 
       // Fallback: direct print
-      await printReceipt(payload, undefined, "80mm");
+      await printReceipt(payload, undefined, "80mm", { storeName });
       Alert.alert("تم", "تم الطباعة.");
     } catch (e) {
       console.warn(e);
       // Fallback attempt to still create PDF/print even if backend failed
       try {
-        const uri = await shareInvoicePdf(payload, undefined, undefined, "80mm");
+        const uri = await shareInvoicePdf(payload, undefined, undefined, "80mm", { storeName });
         if (uri) {
           Alert.alert("تم", "تم توليد ومشاركة الفاتورة (بدون حفظ على الخادم).");
           return;
         }
-        await printReceipt(payload, undefined, "80mm");
+        await printReceipt(payload, undefined, "80mm", { storeName });
         Alert.alert("تم", "تم الطباعة (بدون حفظ على الخادم).");
       } catch (err) {
         console.warn(err);
         Alert.alert("خطأ", "تعذر توليد الفاتورة أو مشاركتها.");
       }
     }
+  }
+
+  async function removeInvoice() {
+    if (!editId) return;
+    Alert.alert("حذف الفاتورة", "هل أنت متأكد؟", [
+      { text: "إلغاء", style: "cancel" },
+      {
+        text: "حذف",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteSale.mutateAsync({ id: editId });
+            Alert.alert("تم", "تم حذف الفاتورة.");
+            onBack();
+          } catch (err) {
+            console.warn(err);
+            Alert.alert("خطأ", "تعذر حذف الفاتورة.");
+          }
+        },
+      },
+    ]);
   }
 
   return (
@@ -248,20 +289,20 @@ function InvoiceView({ onBack, products, customers, colors }: any) {
           <View key={idx} style={{ marginBottom: 8 }}>
             <TextInput
               value={l.description}
-              onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, description: t } : x)))}
+              onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, description: t } : x))))}
               placeholder="وصف البند"
               style={{ borderWidth: 1, borderColor: colors.border, padding: 8, borderRadius: 8, marginBottom: 6, backgroundColor: colors.surface }}
             />
             <View style={{ flexDirection: "row-reverse", gap: 8 }}>
               <TextInput
                 value={String(l.quantity)}
-                onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, quantity: Number(t) || 0 } : x)))}
+                onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, quantity: Number(t) || 0 } : x))))}
                 keyboardType="number-pad"
                 style={{ flex: 1, borderWidth: 1, borderColor: colors.border, padding: 8, borderRadius: 8, backgroundColor: colors.surface }}
               />
               <TextInput
                 value={String(l.unitPrice)}
-                onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, unitPrice: Number(t) || 0 } : x)))}
+                onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, unitPrice: Number(t) || 0 } : x))))}
                 keyboardType="decimal-pad"
                 style={{ flex: 1, borderWidth: 1, borderColor: colors.border, padding: 8, borderRadius: 8, backgroundColor: colors.surface }}
               />
@@ -288,6 +329,14 @@ function InvoiceView({ onBack, products, customers, colors }: any) {
             <Text style={{ color: colors.foreground, fontWeight: "700" }}>حفظ</Text>
           </Pressable>
         </View>
+
+        {editId ? (
+          <View style={{ marginTop: 10 }}>
+            <Pressable onPress={removeInvoice} style={{ padding: 12, borderRadius: 10, backgroundColor: "#ff3b30", alignItems: "center" }}>
+              <Text style={{ color: "#fff", fontWeight: "800" }}>حذف الفاتورة</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </Card>
 
       <View style={{ height: 90 }} />
