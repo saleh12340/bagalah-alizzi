@@ -35,7 +35,8 @@ export function buildInvoiceHtml(
   @page{size:${pageWidth} auto;margin:0}
   *{box-sizing:border-box}
   body{width:${pageWidth};margin:0 auto;padding:8px 6px;font-family:Cairo, Arial, sans-serif;color:#17221D;direction:rtl;font-size:12px}
-  .brand{text-align:center;font-size:17px;font-weight:900;margin-bottom:4px}
+  .logo{max-width:120px;margin:0 auto 6px;text-align:center}
+  .logo-text{font-size:20px;font-weight:900}
   .subtitle{text-align:center;color:#555;margin-bottom:9px;font-weight:700}
   .meta{border-bottom:1px dashed #777;padding-bottom:7px;margin-bottom:7px;font-size:10px;display:flex;justify-content:space-between;gap:5px}
   table{width:100%;border-collapse:collapse}
@@ -45,12 +46,10 @@ export function buildInvoiceHtml(
   .total{display:flex;justify-content:space-between;font-size:17px;font-weight:900;margin-top:10px;border-top:1px solid #222;padding-top:8px}
   .footer{text-align:center;margin-top:12px;font-size:10px;color:#666}
   .customer{margin:6px 0;font-weight:700}
-  .logo{max-width:120px;margin:0 auto 6px}
 </style>
 </head>
 <body>
-  ${logo ? `<div class="logo"><img src="${logo}" style="max-width:100%;height:auto"/></div>` : ""}
-  <div class="brand">${escapeHtml(store)}</div>
+  ${logo ? `<div class="logo"><img src="${logo}" style="max-width:100%;height:auto"/></div>` : `<div class="logo"><div class="logo-text">${escapeHtml(store)}</div></div>`}
   <div class="subtitle">فاتورة مبيعات</div>
   <div class="meta"><span class="customer">${customerName ? `العميل: ${escapeHtml(customerName)}` : ""}</span><span>تاريخ: ${new Date().toLocaleString("ar-SA")}</span></div>
   <table role="presentation">
