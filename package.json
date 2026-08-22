@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
+    "@mateusdegobi/react-native-bluetooth-escpos-printer": "^1.0.4",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-navigation/bottom-tabs": "^7.8.12",
     "@react-navigation/elements": "^2.9.2",
@@ -86,7 +87,6 @@
     "eslint-config-expo": "~10.0.0",
     "prettier": "^3.7.4",
     "qrcode": "^1.5.4",
-    "tailwindcss": "^3.4.17",
     "tsx": "^4.21.0",
     "typescript": "~5.9.3",
     "vitest": "^2.1.9"
