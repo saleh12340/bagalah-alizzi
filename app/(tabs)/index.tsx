@@ -180,25 +180,52 @@ function InvoiceView({ onBack, products, customers, colors }: any) {
 
   const total = useMemo(() => lines.reduce((s, x) => s + Number(x.unitPrice || 0) * Number(x.quantity || 0), 0), [lines]);
 
+  const createSale = trpc.sales.create.useMutation({
+    onSuccess: async (d) => {
+      // after saving, we could refresh queries if needed. keeping simple for now.
+      console.log('sale saved', d);
+    },
+    onError: (err) => {
+      console.warn('sale save failed', err);
+    }
+  });
+
   function addLine() {
     setLines((old) => [...old, { description: "", quantity: 1, unitPrice: 0 }]);
   }
 
   async function saveInvoice() {
     if (!lines.length) return Alert.alert("تنبيه", "أضف بنداً واحداً على الأقل.");
+    const payload = lines.map((l) => ({ name: l.description || "-", quantity: Number(l.quantity) || 0, unitPrice: Number(l.unitPrice) || 0 }));
     try {
-      const payload = lines.map((l) => ({ name: l.description || "-", quantity: Number(l.quantity) || 0, unitPrice: Number(l.unitPrice) || 0 }));
+      // Persist invoice to backend first
+      await createSale.mutateAsync({ items: payload, notes: notes || undefined, customerId: undefined });
+
+      // Then generate & share PDF
       const uri = await shareInvoicePdf(payload, undefined, undefined, "80mm");
       if (uri) {
         Alert.alert("تم", "تم توليد ومشاركة الفاتورة.");
-      } else {
-        // Fallback to direct print
-        await printReceipt(payload, undefined, "80mm");
-        Alert.alert("تم", "تم الطباعة.");
+        return;
       }
+
+      // Fallback: direct print
+      await printReceipt(payload, undefined, "80mm");
+      Alert.alert("تم", "تم الطباعة.");
     } catch (e) {
       console.warn(e);
-      Alert.alert("خطأ", "تعذر توليد الفاتورة أو مشاركتها.");
+      // Fallback attempt to still create PDF/print even if backend failed
+      try {
+        const uri = await shareInvoicePdf(payload, undefined, undefined, "80mm");
+        if (uri) {
+          Alert.alert("تم", "تم توليد ومشاركة الفاتورة (بدون حفظ على الخادم).");
+          return;
+        }
+        await printReceipt(payload, undefined, "80mm");
+        Alert.alert("تم", "تم الطباعة (بدون حفظ على الخادم).");
+      } catch (err) {
+        console.warn(err);
+        Alert.alert("خطأ", "تعذر توليد الفاتورة أو مشاركتها.");
+      }
     }
   }
 
@@ -285,6 +312,88 @@ function StockView({ products, onBack, colors }: any) {
             <Text style={{ color: colors.muted, fontSize: 12 }}>الكمية: {p.stock}</Text>
           </View>
         ))}
+      </Card>
+
+      <View style={{ height: 90 }} />
+    </View>
+  );
+}
+
+function CustomersView({ customers, onBack, colors }: any) {
+  return (
+    <View>
+      <View style={{ flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800" }}>الحسابات</Text>
+        <Pressable onPress={onBack} style={{ padding: 8 }}>
+          <IconSymbol name="xmark" size={20} color={colors.muted} />
+        </Pressable>
+      </View>
+
+      <Card>
+        {customers.slice(0, 20).map((c: any) => (
+          <View key={c.id} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <Text style={{ color: colors.foreground }}>{c.name}</Text>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>{c.phone || "-"}</Text>
+          </View>
+        ))}
+      </Card>
+
+      <View style={{ height: 90 }} />
+    </View>
+  );
+}
+
+function ReportsView({ report, onBack, colors }: any) {
+  return (
+    <View>
+      <View style={{ flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800" }}>التقارير</Text>
+        <Pressable onPress={onBack} style={{ padding: 8 }}>
+          <IconSymbol name="xmark" size={20} color={colors.muted} />
+        </Pressable>
+      </View>
+
+      <Card>
+        <Text style={{ color: colors.foreground, fontWeight: "700" }}>ملخّص اليوم</Text>
+        <View style={{ marginTop: 8 }}>
+          <Text style={{ color: colors.muted }}>إجمالي مبيعات: {money(report.totalSales || 0)}</Text>
+          <Text style={{ color: colors.muted }}>عدد الفواتير: {report.invoicesCount || 0}</Text>
+        </View>
+      </Card>
+
+      <View style={{ height: 90 }} />
+    </View>
+  );
+}
+
+function SettingsView({ colors, onBack }: any) {
+  const [storeName, setStoreName] = useState("");
+  const settingsQ = trpc.settings.get.useQuery();
+  const update = trpc.settings.update.useMutation({ onSuccess: () => settingsQ.refetch() });
+
+  React.useEffect(() => {
+    if (settingsQ.data) {
+      setStoreName(settingsQ.data.storeName || "");
+    }
+  }, [settingsQ.data]);
+
+  return (
+    <View>
+      <View style={{ flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800" }}>الإعدادات</Text>
+        <Pressable onPress={onBack} style={{ padding: 8 }}>
+          <IconSymbol name="xmark" size={20} color={colors.muted} />
+        </Pressable>
+      </View>
+
+      <Card>
+        <Field label="اسم المتجر" value={storeName} onChangeText={setStoreName} placeholder="اسم المتجر" />
+        <Pressable
+          onPress={() => update.mutate({ storeName: storeName.trim() || undefined })}
+          style={{ padding: 12, backgroundColor: colors.primary, borderRadius: 10, alignItems: "center", marginTop: 8 }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "800" }}>حفظ</Text>
+        </Pressable>
       </Card>
 
       <View style={{ height: 90 }} />
