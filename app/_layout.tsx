@@ -1,11 +1,11 @@
 import "@/global.css";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { GestureHandlerRootView } from "react-native-gesture-handler";
-import "react-native-reanimated";
+import { Alert, BackHandler, GestureHandlerRootView } from "react-native";
 import { Platform } from "react-native";
+import "react-native-reanimated";
 import "@/lib/_core/nativewind-pressable";
 import { ThemeProvider } from "@/lib/theme-provider";
 import {
@@ -27,11 +27,46 @@ export const unstable_settings = {
 };
 
 export default function RootLayout() {
+  const router = useRouter();
   const initialInsets = initialWindowMetrics?.insets ?? DEFAULT_WEB_INSETS;
   const initialFrame = initialWindowMetrics?.frame ?? DEFAULT_WEB_FRAME;
 
   const [insets, setInsets] = useState<EdgeInsets>(initialInsets);
   const [frame, setFrame] = useState<Rect>(initialFrame);
+
+  // Ask for confirmation before closing the Android app when the user is at the root screen.
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+
+    const onBackPress = () => {
+      // If there is a previous route, let Expo Router handle normal navigation first.
+      if (router.canGoBack()) {
+        return false;
+      }
+
+      Alert.alert(
+        "تأكيد الخروج",
+        "هل تريد الخروج من البرنامج؟",
+        [
+          {
+            text: "لا",
+            style: "cancel",
+          },
+          {
+            text: "نعم، خروج",
+            style: "destructive",
+            onPress: () => BackHandler.exitApp(),
+          },
+        ],
+        { cancelable: true },
+      );
+
+      return true;
+    };
+
+    const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => subscription.remove();
+  }, [router]);
 
   // Initialize Manus runtime for cookie injection from parent container
   useEffect(() => {
