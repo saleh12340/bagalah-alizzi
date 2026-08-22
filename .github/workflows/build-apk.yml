@@ -54,3 +54,4 @@ jobs:
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
+      # Trigger a fresh APK build from the latest main commit.
