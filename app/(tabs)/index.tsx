@@ -439,7 +439,7 @@ function SettingsView({ colors, onBack }: any) {
       <Card>
         <Field label="اسم المتجر" value={storeName || "بقالة العزي للمواد الغذائية"} onChangeText={setStoreName} placeholder="اسم المتجر" />
         <Pressable
-          onPress={() => update.mutate({ storeName: storeName.trim() || "بقالة العزي للمواد الغذائية" })}
+          onPress={() => update.mutate({ storeName: storeName.trim() || "بقالة العزي للمواد الغذائية", currency: "ريال", receiptWidth: "80mm" })}
           style={{ padding: 12, backgroundColor: colors.primary, borderRadius: 10, alignItems: "center", marginTop: 8 }}
         >
           <Text style={{ color: "#fff", fontWeight: "800" }}>حفظ</Text>
