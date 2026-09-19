@@ -1,5 +1,5 @@
 import * as Print from 'expo-print';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 // NOTE:
 // - expo-print is used to generate/print PDFs and works on Expo Managed.
@@ -47,7 +47,7 @@ export async function printTcp(options: TcpOptions, data: Uint8Array | ArrayBuff
     return new Promise<void>((resolve, reject) => {
       const client = TcpSocket.createConnection({ port: options.port || 9100, host: options.ip }, () => {
         try {
-          client.write(Buffer.from(data));
+          client.write(Buffer.from(data instanceof ArrayBuffer ? new Uint8Array(data) : data));
           client.end();
           resolve();
         } catch (e) {
