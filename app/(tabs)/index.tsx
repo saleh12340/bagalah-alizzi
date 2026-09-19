@@ -116,7 +116,7 @@ export default function HomeScreen() {
 
                 <View style={{ marginTop: 12, flexDirection: "row-reverse", justifyContent: "space-between", gap: 10 }}>
                   <StatCard label="إجمالي المبيعات" value={money(report.totalSales || 0)} accent />
-                  <StatCard label="عدد الفواتير" value={report.invoicesCount || 0} />
+                  <StatCard label="عدد الفواتير" value={report.invoices || 0} />
                   <StatCard label="المخزون المنخفض" value={lowStock.length} />
                 </View>
               </Card>
@@ -230,7 +230,7 @@ function InvoiceView({ onBack, products, customers, colors, storeName }: any) {
       }
 
       // Fallback: direct print
-      await printReceipt(payload, undefined, "80mm", { storeName });
+      await printReceipt(payload, undefined, "80mm");
       Alert.alert("تم", "تم الطباعة.");
     } catch (e) {
       console.warn(e);
@@ -437,7 +437,7 @@ function SettingsView({ colors, onBack }: any) {
       </View>
 
       <Card>
-        <Field label="اسم المتجر" value={storeName} onChangeText={setStoreName} placeholder="اسم المتجر" />
+        <Field label="اسم المتجر" value={storeName || "بقالة العزي للمواد الغذائية"} onChangeText={setStoreName} placeholder="اسم المتجر" />
         <Pressable
           onPress={() => update.mutate({ storeName: storeName.trim() || undefined })}
           style={{ padding: 12, backgroundColor: colors.primary, borderRadius: 10, alignItems: "center", marginTop: 8 }}
