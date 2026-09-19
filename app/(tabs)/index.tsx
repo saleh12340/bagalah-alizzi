@@ -51,7 +51,7 @@ export default function HomeScreen() {
   const products = productsQ.data || [];
   const customers = customersQ.data || [];
   const sales = salesQ.data || [];
-  const report = reportQ.data || {};
+  const report: any = reportQ.data || {};
   const activities = activitiesQ.data || [];
 
   const lowStock = products.filter((p: any) => Number(p.stock) <= Number(p.minStock));
@@ -241,7 +241,7 @@ function InvoiceView({ onBack, products, customers, colors, storeName }: any) {
           Alert.alert("تم", "تم توليد ومشاركة الفاتورة (بدون حفظ على الخادم).");
           return;
         }
-        await printReceipt(payload, undefined, "80mm", { storeName });
+        await printReceipt(payload, undefined, "80mm");
         Alert.alert("تم", "تم الطباعة (بدون حفظ على الخادم).");
       } catch (err) {
         console.warn(err);
@@ -439,7 +439,7 @@ function SettingsView({ colors, onBack }: any) {
       <Card>
         <Field label="اسم المتجر" value={storeName || "بقالة العزي للمواد الغذائية"} onChangeText={setStoreName} placeholder="اسم المتجر" />
         <Pressable
-          onPress={() => update.mutate({ storeName: storeName.trim() || undefined })}
+          onPress={() => update.mutate({ storeName: storeName.trim() || "بقالة العزي للمواد الغذائية" })}
           style={{ padding: 12, backgroundColor: colors.primary, borderRadius: 10, alignItems: "center", marginTop: 8 }}
         >
           <Text style={{ color: "#fff", fontWeight: "800" }}>حفظ</Text>
