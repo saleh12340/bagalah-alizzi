@@ -125,6 +125,8 @@ export default function SettingsScreen() {
             <Field label="عدد نسخ الإيصال" value={copies} onChangeText={setCopies} keyboardType="number-pad" colors={colors} />
           </Section>
 
+      </ScrollView>
+
       <Pressable onPress={save} disabled={update.isPending} style={[styles.saveButton, { backgroundColor: colors.primary }, update.isPending && { opacity: 0.6 }]}>
         <Text style={styles.saveText}>{update.isPending ? "جارٍ الحفظ..." : "حفظ الإعدادات"}</Text>
       </Pressable>
