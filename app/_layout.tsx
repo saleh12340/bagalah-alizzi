@@ -14,6 +14,7 @@ import { SafeAreaFrameContext, SafeAreaInsetsContext, SafeAreaProvider, initialW
 import type { EdgeInsets, Metrics, Rect } from "react-native-safe-area-context";
 import { trpc, createTRPCClient } from "@/lib/trpc";
 import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-runtime";
+import { clearLocalStorageNotice, getLocalStorageNotice, loadLocalState } from "@/lib/local-store";
 
 // load Cairo font
 import { useFonts, Cairo_400Regular, Cairo_700Bold } from "@expo-google-fonts/cairo";
@@ -28,6 +29,7 @@ export default function RootLayout() {
   const initialFrame = initialWindowMetrics?.frame ?? DEFAULT_WEB_FRAME;
   const [insets, setInsets] = useState<EdgeInsets>(initialInsets);
   const [frame, setFrame] = useState<Rect>(initialFrame);
+  const [storageNotice, setStorageNotice] = useState("");
 
   // Ask for confirmation before closing the Android app when the user is at the root screen.
   useEffect(() => {
@@ -132,3 +134,23 @@ export default function RootLayout() {
   }
   return <ThemeProvider><SafeAreaProvider initialMetrics={providerInitialMetrics}>{content}</SafeAreaProvider></ThemeProvider>;
 }
+
+const styles = StyleSheet.create({
+  notice: {
+    minHeight: 78,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: "#fff3cd",
+    borderBottomWidth: 1,
+    borderBottomColor: "#e5b94f",
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 10,
+    zIndex: 9999,
+  },
+  noticeTextWrap: { flex: 1, alignItems: "flex-end" },
+  noticeTitle: { fontSize: 14, fontWeight: "800", color: "#7a4f00", textAlign: "right" },
+  noticeText: { marginTop: 2, fontSize: 12, lineHeight: 18, color: "#5d4a22", textAlign: "right" },
+  noticeClose: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8, backgroundColor: "#fff" },
+  noticeCloseText: { fontSize: 12, fontWeight: "700", color: "#7a4f00" },
+});

@@ -15,8 +15,8 @@ import {
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
-import { trpc } from "@/lib/trpc";
-import { printReceipt, shareInvoicePdf } from "@/lib/invoice-sharing";
+import { shareInvoicePdf, printReceipt } from "@/lib/invoice-sharing";
+import { loadLocalState, saveLocalState, type LocalCustomer, type LocalExpense, type LocalInvoice, type LocalProduct, type LocalState } from "@/lib/local-store";
 
 import { Card } from "@/components/ui/Card";
 import { Stat as StatCard } from "@/components/ui/Stat";

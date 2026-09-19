@@ -1,24 +1,51 @@
-import { useEffect, useState } from "react";
-import { Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { useEffect, useMemo, useState, type ComponentProps } from "react";
+import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { trpc } from "@/lib/trpc";
 import { clearSavedThermalPrinter, enableBluetooth, getSavedThermalPrinter, isBluetoothEnabled, saveThermalPrinter, scanThermalPrinters, testThermalPrinter, type ThermalPrinterDevice } from "@/lib/thermal-printer";
 
+type MenuItem = { title: string; icon: string; key: string; description?: string };
+type IconName = ComponentProps<typeof IconSymbol>["name"];
+
+const menuItems: MenuItem[] = [
+  { title: "البيانات الشخصية", icon: "person.crop.rectangle.fill", key: "profile" },
+  { title: "خيارات الطباعة", icon: "printer.fill", key: "printing" },
+  { title: "خيارات الأمان", icon: "lock.fill", key: "security" },
+  { title: "المستخدمين والصلاحيات", icon: "person.2.fill", key: "users" },
+  { title: "التصنيفات", icon: "square.grid.2x2.fill", key: "categories" },
+  { title: "مجموعة الصنف", icon: "cart.fill", key: "groups" },
+  { title: "وحدات القياس", icon: "cube.fill", key: "units" },
+  { title: "خيارات حفظ البيانات", icon: "externaldrive.fill", key: "backup" },
+  { title: "الطابعة الحرارية", icon: "printer.fill", key: "thermal" },
+  { title: "الضريبة", icon: "percent", key: "tax" },
+  { title: "طابعة باركود الأصناف", icon: "barcode.viewfinder", key: "barcode" },
+  { title: "خيارات الإشعارات", icon: "bell.fill", key: "notifications" },
+  { title: "خيارات أخرى", icon: "ellipsis.circle.fill", key: "other" },
+  { title: "تفعيل الاشتراك", icon: "person.badge.key.fill", key: "subscription" },
+];
+
 export default function SettingsScreen() {
   const colors = useColors();
   const utils = trpc.useUtils();
   const { data } = trpc.settings.get.useQuery();
-  const update = trpc.settings.update.useMutation({ onSuccess: () => { utils.settings.get.invalidate(); Alert.alert("تم الحفظ", "تم حفظ إعدادات المتجر والطباعة."); }, onError: (e) => Alert.alert("تعذر الحفظ", e.message) });
+  const update = trpc.settings.update.useMutation({
+    onSuccess: () => { utils.settings.get.invalidate(); setNotice("تم حفظ الإعدادات بنجاح", "success"); },
+    onError: (e) => setNotice(e.message || "تعذر حفظ الإعدادات", "error"),
+  });
   const [storeName, setStoreName] = useState("بقالة العزي للمواد الغذائية");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [currency, setCurrency] = useState("ر.س");
   const [paper, setPaper] = useState<"58mm" | "80mm">("80mm");
+  const [autoPrint, setAutoPrint] = useState(false);
+  const [showLogo, setShowLogo] = useState(true);
   const [showUnitPrice, setShowUnitPrice] = useState(false);
   const [lowStockAlerts, setLowStockAlerts] = useState(true);
-  const [autoPrint, setAutoPrint] = useState(false);
+  const [notifications, setNotifications] = useState(true);
+  const [taxEnabled, setTaxEnabled] = useState(false);
+  const [taxRate, setTaxRate] = useState("0");
   const [copies, setCopies] = useState("1");
   const [showLogo, setShowLogo] = useState(true);
   const [printers, setPrinters] = useState<ThermalPrinterDevice[]>([]);
@@ -98,21 +125,42 @@ export default function SettingsScreen() {
             <Field label="عدد نسخ الإيصال" value={copies} onChangeText={setCopies} keyboardType="number-pad" colors={colors} />
           </Section>
 
-          <Section title="التقارير والمخزون" subtitle="التحكم في التنبيهات وطريقة عرض النتائج" icon="chart.bar.fill" colors={colors}>
-            <SettingRow title="تنبيه المخزون المنخفض" description="تنبيه عند وصول الصنف للحد الأدنى" colors={colors}><Switch value={lowStockAlerts} onValueChange={setLowStockAlerts} /></SettingRow>
-            <ActionRow title="التقارير اليومية والشهرية والسنوية" subtitle="تقارير المبيعات والمشتريات والمصروفات والأرباح" icon="chart.pie.fill" colors={colors} onPress={() => Alert.alert("التقارير", "يمكنك فتح تبويب التقارير لاختيار الفترة المطلوبة.")} />
-          </Section>
+      <Pressable onPress={save} disabled={update.isPending} style={[styles.saveButton, { backgroundColor: colors.primary }, update.isPending && { opacity: 0.6 }]}>
+        <Text style={styles.saveText}>{update.isPending ? "جارٍ الحفظ..." : "حفظ الإعدادات"}</Text>
+      </Pressable>
 
-          <Section title="البيانات والنسخ الاحتياطي" subtitle="حماية بيانات البقالة وإدارتها" icon="externaldrive.fill" colors={colors}>
-            <ActionRow title="نسخ احتياطي" subtitle="حفظ نسخة آمنة من بيانات التطبيق" icon="arrow.down.doc.fill" colors={colors} onPress={() => Alert.alert("النسخ الاحتياطي", "سيتم تنفيذ النسخ الاحتياطي من قاعدة البيانات في المرحلة التالية.")} />
-            <ActionRow title="استعادة البيانات" subtitle="استرجاع نسخة محفوظة" icon="arrow.up.doc.fill" colors={colors} onPress={() => Alert.alert("استعادة البيانات", "اختر ملف النسخة الاحتياطية لاستعادته.")} />
-            <ActionRow title="تحديث البيانات" subtitle="إعادة تحميل البيانات من الخادم" icon="arrow.clockwise" colors={colors} onPress={() => { utils.invalidate(); Alert.alert("تم التحديث", "تم طلب تحديث بيانات التطبيق."); }} />
-          </Section>
+      {notice && <View pointerEvents="none" style={[styles.notice, { backgroundColor: notice.type === "error" ? "#B42318" : colors.primary }]}><IconSymbol name={notice.type === "error" ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"} size={19} color="#fff" /><Text style={styles.noticeText}>{notice.text}</Text></View>}
 
-          <Pressable disabled={update.isPending} onPress={save} style={({ pressed }) => [styles.save, { backgroundColor: colors.primary }, pressed && { opacity: 0.8 }, update.isPending && { opacity: 0.6 }]}><IconSymbol name="checkmark" size={20} color="#fff" /><Text style={styles.saveText}>{update.isPending ? "جارٍ الحفظ..." : "حفظ الإعدادات"}</Text></Pressable>
-          <Text style={[styles.version, { color: colors.muted }]}>بقالة العزي • إعدادات احترافية</Text>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      <Modal visible={!!activeMenu} transparent animationType="slide" onRequestClose={() => setActiveMenu(null)}>
+        <KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS === "android" ? "height" : "padding"}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setActiveMenu(null)} />
+          <View style={[styles.sheet, { backgroundColor: colors.background }]}>
+            <View style={styles.sheetHeader}>
+              <Text style={[styles.sheetTitle, { color: colors.foreground }]}>{menuTitle}</Text>
+              <Pressable onPress={() => setActiveMenu(null)} style={styles.close}><Text style={{ fontSize: 25, color: colors.muted }}>×</Text></Pressable>
+            </View>
+            <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={styles.form}>
+              {activeMenu === "profile" && <>
+                <Text style={[styles.label, { color: colors.foreground }]}>اسم المحل</Text><TextInput value={storeName} onChangeText={setStoreName} style={[styles.input, { borderColor: colors.border, color: colors.foreground }]} />
+                <Text style={[styles.label, { color: colors.foreground }]}>رقم الهاتف</Text><TextInput value={phone} onChangeText={setPhone} keyboardType="phone-pad" style={[styles.input, { borderColor: colors.border, color: colors.foreground }]} />
+                <Text style={[styles.label, { color: colors.foreground }]}>العنوان</Text><TextInput value={address} onChangeText={setAddress} style={[styles.input, { borderColor: colors.border, color: colors.foreground }]} />
+              </>}
+              {activeMenu === "printing" && <>
+                <Text style={[styles.label, { color: colors.foreground }]}>مقاس الورق الحراري</Text><View style={styles.segment}><Pressable onPress={() => setPaper("58mm")} style={[styles.seg, paper === "58mm" && { backgroundColor: colors.primary }]}><Text style={{ color: paper === "58mm" ? "#fff" : colors.foreground }}>58mm</Text></Pressable><Pressable onPress={() => setPaper("80mm")} style={[styles.seg, paper === "80mm" && { backgroundColor: colors.primary }]}><Text style={{ color: paper === "80mm" ? "#fff" : colors.foreground }}>80mm</Text></Pressable></View>
+                <Row label="طباعة تلقائية" value={autoPrint} onChange={setAutoPrint} /><Row label="إظهار الشعار" value={showLogo} onChange={setShowLogo} /><Row label="إظهار سعر الوحدة" value={showUnitPrice} onChange={setShowUnitPrice} />
+              </>}
+              {activeMenu === "thermal" && <><Text style={[styles.help, { color: colors.muted }]}>يمكن ضبط الطابعة الحرارية الصغيرة من هنا، وستبقى الإعدادات محفوظة على الجهاز.</Text><Row label="الطابعة الحرارية مفعلة" value={autoPrint} onChange={setAutoPrint} /></>}
+              {activeMenu === "backup" && <Text style={[styles.help, { color: colors.muted }]}>البيانات المحلية تحفظ على الجهاز. لن يتم استبدالها تلقائيًا. استخدم النسخ الاحتياطي قبل إعادة ضبط البيانات.</Text>}
+              {activeMenu === "notifications" && <><Row label="الإشعارات" value={notifications} onChange={setNotifications} /><Row label="تنبيه المخزون المنخفض" value={lowStockAlerts} onChange={setLowStockAlerts} /></>}
+              {activeMenu === "tax" && <><Row label="تفعيل الضريبة" value={taxEnabled} onChange={setTaxEnabled} /><Text style={[styles.label, { color: colors.foreground }]}>نسبة الضريبة</Text><TextInput value={taxRate} onChangeText={setTaxRate} keyboardType="decimal-pad" style={[styles.input, { borderColor: colors.border, color: colors.foreground }]} /></>}
+              {activeMenu === "other" && <><Text style={[styles.label, { color: colors.foreground }]}>عدد نسخ الفاتورة</Text><TextInput value={copies} onChangeText={setCopies} keyboardType="number-pad" style={[styles.input, { borderColor: colors.border, color: colors.foreground }]} /></>}
+              <View style={{ height: 20 }} />
+              <Pressable onPress={save} disabled={update.isPending} style={[styles.saveSheet, { backgroundColor: colors.primary }]}><Text style={styles.saveText}>{update.isPending ? "جارٍ الحفظ..." : "حفظ"}</Text></Pressable>
+              <View style={{ height: 80 }} />
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScreenContainer>
   );
 }
