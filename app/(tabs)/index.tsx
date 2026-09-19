@@ -24,6 +24,7 @@ import { ActionRow } from "@/components/ui/ActionRow";
 import { FAB } from "@/components/ui/FAB";
 import { Field } from "@/components/ui/Field";
 import { trpc } from "@/lib/trpc";
+import { useRouter } from "expo-router";
 
 type Section = "home" | "invoice" | "stock" | "customers" | "reports" | "expenses" | "settings";
 
@@ -38,6 +39,7 @@ const todayRange = () => {
 
 export default function HomeScreen() {
   const colors = useColors();
+  const router = useRouter();
   const [section, setSection] = useState<Section>("home");
   const [search, setSearch] = useState("");
 
@@ -84,7 +86,7 @@ export default function HomeScreen() {
             <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text>
           </View>
           <Pressable
-            onPress={() => setSection("settings")}
+            onPress={() => router.push("/settings")}
             style={({ pressed }) => [{ padding: 8, borderRadius: 8, backgroundColor: colors.surface }, pressed && { opacity: 0.7 }]}
           >
             <IconSymbol name="gearshape.fill" size={18} color={colors.primary} />
@@ -121,7 +123,8 @@ export default function HomeScreen() {
                 <Text style={{ color: colors.foreground, fontWeight: "700", marginBottom: 8 }}>الأنشطة الأخيرة</Text>
                 {activities.slice(0, 6).map((a: any) => (
                   <View key={a.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-                    <Text style={{ color: colors.foreground }}>{a.summary}</Text>
+                    <Text style={{ color: colors.foreground, fontWeight: "700" }}>{a.title || "نشاط"}</Text>
+                    <Text style={{ color: colors.muted, fontSize: 12 }}>{a.subtitle || ""}</Text>
                     <Text style={{ color: colors.muted, fontSize: 12 }}>{new Date(a.createdAt).toLocaleString("ar-SA")}</Text>
                   </View>
                 ))}
@@ -161,6 +164,8 @@ export default function HomeScreen() {
           {section === "customers" && <CustomersView customers={customers} onBack={() => setSection("home")} colors={colors} />}
 
           {section === "reports" && <ReportsView report={report} onBack={() => setSection("home")} colors={colors} />}
+
+          {section === "expenses" && <ExpensesView onBack={() => setSection("home")} colors={colors} />}
 
           {section === "settings" && <SettingsView colors={colors} onBack={() => setSection("home")} />}
         </ScrollView>
@@ -233,21 +238,23 @@ function InvoiceView({ onBack, products, customers, colors, storeName }: any) {
   });
 
   function addLine() {
-    setLines((old) => [...old, { description: "", quantity: 1, unitPrice: 0 }]);
+    setLines((old) => [...old, { description: "", quantity: 1, total: 0, unitPrice: 0 }]);
   }
 
   function buildPayload() {
-    return lines.map((l) => ({
-      name: l.description || "-",
-      quantity: Number(l.quantity) || 0,
-      unitPrice: Number(l.unitPrice) || 0,
-    }));
+    return lines
+      .filter((l) => String(l.description || "").trim() && Number(l.quantity) > 0 && Number(l.total) > 0)
+      .map((l) => ({
+        name: String(l.description).trim(),
+        quantity: Number(l.quantity),
+        unitPrice: Number(l.unitPrice),
+      }));
   }
 
   async function persistInvoice() {
     const payload = buildPayload();
     if (!payload.length) {
-      Alert.alert("تنبيه", "أضف بنداً واحداً على الأقل.");
+      Alert.alert("تنبيه", "أدخل اسم الصنف والإجمالي والكمية لبند واحد على الأقل.");
       return null;
     }
 
@@ -277,14 +284,7 @@ function InvoiceView({ onBack, products, customers, colors, storeName }: any) {
     const payload = await persistInvoice();
     if (!payload) return;
     try {
-      // Persist invoice to backend first
-      if (editId) {
-        await updateSale.mutateAsync({ id: editId, items: payload.map((x) => ({ description: x.name, quantity: x.quantity, unitPrice: x.unitPrice })), notes: notes || undefined });
-      } else {
-        await createSale.mutateAsync({ items: payload.map((x) => ({ description: x.name, quantity: x.quantity, unitPrice: x.unitPrice })), notes: notes || undefined });
-      }
-
-      // Then generate & share PDF
+      // The invoice was already persisted by persistInvoice(). Generate and share it now.
       const uri = await shareInvoicePdf(payload, undefined, undefined, "80mm", { storeName });
       if (uri) {
         Alert.alert("تم", "تم توليد ومشاركة الفاتورة.");
@@ -425,51 +425,104 @@ function InvoiceView({ onBack, products, customers, colors, storeName }: any) {
 }
 
 function StockView({ products, onBack, colors }: any) {
-  return (
-    <View>
-      <View style={{ flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800" }}>الأصناف والمخزون</Text>
-        <Pressable onPress={onBack} style={{ padding: 8 }}>
-          <IconSymbol name="xmark" size={20} color={colors.muted} />
-        </Pressable>
-      </View>
+  const utils = trpc.useUtils();
+  const create = trpc.products.create.useMutation({ onSuccess: () => utils.products.list.invalidate() });
+  const remove = trpc.products.delete.useMutation({ onSuccess: () => utils.products.list.invalidate() });
+  const [name, setName] = useState("");
+  const [salePrice, setSalePrice] = useState("");
+  const [stock, setStock] = useState("0");
+  const [minStock, setMinStock] = useState("0");
 
-      <Card>
-        {products.slice(0, 20).map((p: any) => (
-          <View key={p.id} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <Text style={{ color: colors.foreground }}>{p.name}</Text>
-            <Text style={{ color: colors.muted, fontSize: 12 }}>الكمية: {p.stock}</Text>
-          </View>
-        ))}
-      </Card>
+  const addProduct = async () => {
+    const price = Number(salePrice);
+    if (!name.trim() || price < 0) return Alert.alert("تنبيه", "أدخل اسم الصنف وسعر البيع.");
+    try {
+      await create.mutateAsync({ name: name.trim(), salePrice: price, stock: Number(stock) || 0, minStock: Number(minStock) || 0 });
+      setName(""); setSalePrice(""); setStock("0"); setMinStock("0");
+    } catch (e: any) { Alert.alert("خطأ", e?.message || "تعذر إضافة الصنف."); }
+  };
 
-      <View style={{ height: 90 }} />
+  return <View>
+    <View style={styles.subHeader}>
+      <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800" }}>الأصناف والمخزون</Text>
+      <Pressable onPress={onBack}><IconSymbol name="xmark" size={20} color={colors.muted} /></Pressable>
     </View>
-  );
+    <Card>
+      <Field label="اسم الصنف" value={name} onChangeText={setName} placeholder="مثال: مياه" />
+      <Field label="سعر البيع" value={salePrice} onChangeText={setSalePrice} keyboardType="decimal-pad" placeholder="0.00" />
+      <View style={{ flexDirection: "row-reverse", gap: 8 }}>
+        <View style={{ flex: 1 }}><Field label="الرصيد" value={stock} onChangeText={setStock} keyboardType="decimal-pad" /></View>
+        <View style={{ flex: 1 }}><Field label="حد التنبيه" value={minStock} onChangeText={setMinStock} keyboardType="decimal-pad" /></View>
+      </View>
+      <Pressable onPress={addProduct} style={[styles.primaryBtn, { backgroundColor: colors.primary }]}><Text style={styles.primaryBtnText}>إضافة صنف</Text></Pressable>
+    </Card>
+    <Card style={{ marginTop: 12 }}>
+      {products.slice(0, 60).map((p: any) => <View key={p.id} style={[styles.listRow, { borderBottomColor: colors.border }]}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: colors.foreground, fontWeight: "700" }}>{p.name}</Text>
+          <Text style={{ color: colors.muted, fontSize: 12 }}>الرصيد {p.stock} • البيع {money(p.salePrice)}</Text>
+        </View>
+        {Number(p.stock) <= Number(p.minStock) && <Text style={{ color: "#B42318", fontSize: 11 }}>منخفض</Text>}
+        <Pressable onPress={() => Alert.alert("حذف الصنف", "سيتم إخفاؤه من الأصناف النشطة.", [{ text: "إلغاء", style: "cancel" }, { text: "حذف", style: "destructive", onPress: () => remove.mutate({ id: p.id }) }])}><Text style={{ color: "#B42318" }}>حذف</Text></Pressable>
+      </View>)}
+    </Card>
+    <View style={{ height: 90 }} />
+  </View>;
 }
 
 function CustomersView({ customers, onBack, colors }: any) {
-  return (
-    <View>
-      <View style={{ flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800" }}>الحسابات</Text>
-        <Pressable onPress={onBack} style={{ padding: 8 }}>
-          <IconSymbol name="xmark" size={20} color={colors.muted} />
-        </Pressable>
-      </View>
+  const utils = trpc.useUtils();
+  const create = trpc.customers.create.useMutation({ onSuccess: () => utils.customers.list.invalidate() });
+  const payment = trpc.customers.payment.useMutation({ onSuccess: () => utils.customers.list.invalidate() });
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [selected, setSelected] = useState<any>(null);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const accountQ = trpc.customers.account.useQuery({ customerId: selected?.id || 0 }, { enabled: !!selected?.id });
 
-      <Card>
-        {customers.slice(0, 20).map((c: any) => (
-          <View key={c.id} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            <Text style={{ color: colors.foreground }}>{c.name}</Text>
-            <Text style={{ color: colors.muted, fontSize: 12 }}>{c.phone || "-"}</Text>
-          </View>
-        ))}
-      </Card>
+  const addCustomer = async () => {
+    if (!name.trim()) return Alert.alert("تنبيه", "أدخل اسم العميل.");
+    try { await create.mutateAsync({ name: name.trim(), phone: phone.trim() || undefined }); setName(""); setPhone(""); }
+    catch (e: any) { Alert.alert("خطأ", e?.message || "تعذر إضافة العميل."); }
+  };
 
-      <View style={{ height: 90 }} />
-    </View>
-  );
+  const addPayment = async () => {
+    const amount = Number(paymentAmount);
+    if (!selected?.id || amount <= 0) return;
+    try { await payment.mutateAsync({ customerId: selected.id, amount }); setPaymentAmount(""); await accountQ.refetch(); }
+    catch (e: any) { Alert.alert("خطأ", e?.message || "تعذر تسجيل الدفعة."); }
+  };
+
+  if (selected) return <View>
+    <View style={styles.subHeader}><Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800" }}>{selected.name}</Text><Pressable onPress={() => setSelected(null)}><IconSymbol name="xmark" size={20} color={colors.muted} /></Pressable></View>
+    <Card>
+      <Text style={{ color: colors.muted }}>الرصيد الحالي</Text>
+      <Text style={{ color: colors.foreground, fontSize: 25, fontWeight: "900", marginBottom: 10 }}>{money(accountQ.data?.balance ?? selected.balance)}</Text>
+      <Field label="دفعة من العميل" value={paymentAmount} onChangeText={setPaymentAmount} keyboardType="decimal-pad" placeholder="0.00" />
+      <Pressable onPress={addPayment} style={[styles.primaryBtn, { backgroundColor: colors.primary }]}><Text style={styles.primaryBtnText}>تسجيل الدفعة</Text></Pressable>
+    </Card>
+    <Card style={{ marginTop: 12 }}>
+      {(accountQ.data?.invoices || []).map((x: any) => <View key={x.id} style={[styles.listRow, { borderBottomColor: colors.border }]}><View style={{ flex: 1 }}><Text style={{ color: colors.foreground }}>{x.invoiceNo}</Text><Text style={{ color: colors.muted, fontSize: 12 }}>{new Date(x.createdAt).toLocaleString("ar-SA")}</Text></View><Text style={{ color: colors.foreground, fontWeight: "800" }}>{money(x.total)}</Text></View>)}
+      {(accountQ.data?.payments || []).map((x: any) => <View key={"p"+x.id} style={[styles.listRow, { borderBottomColor: colors.border }]}><View style={{ flex: 1 }}><Text style={{ color: colors.foreground }}>دفعة</Text><Text style={{ color: colors.muted, fontSize: 12 }}>{new Date(x.createdAt).toLocaleString("ar-SA")}</Text></View><Text style={{ color: colors.primary, fontWeight: "800" }}>-{money(x.amount)}</Text></View>)}
+    </Card>
+    <View style={{ height: 90 }} />
+  </View>;
+
+  return <View>
+    <View style={styles.subHeader}><Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800" }}>الحسابات</Text><Pressable onPress={onBack}><IconSymbol name="xmark" size={20} color={colors.muted} /></Pressable></View>
+    <Card>
+      <Field label="اسم العميل" value={name} onChangeText={setName} placeholder="الاسم" />
+      <Field label="الجوال" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="رقم الجوال" />
+      <Pressable onPress={addCustomer} style={[styles.primaryBtn, { backgroundColor: colors.primary }]}><Text style={styles.primaryBtnText}>إضافة عميل</Text></Pressable>
+    </Card>
+    <Card style={{ marginTop: 12 }}>
+      {customers.slice(0, 60).map((c: any) => <Pressable key={c.id} onPress={() => setSelected(c)} style={[styles.listRow, { borderBottomColor: colors.border }]}>
+        <View style={{ flex: 1 }}><Text style={{ color: colors.foreground, fontWeight: "700" }}>{c.name}</Text><Text style={{ color: colors.muted, fontSize: 12 }}>{c.phone || "بدون رقم"}</Text></View>
+        <Text style={{ color: Number(c.balance) > 0 ? "#B42318" : colors.primary, fontWeight: "900" }}>{money(c.balance)}</Text>
+      </Pressable>)}
+    </Card>
+    <View style={{ height: 90 }} />
+  </View>;
 }
 
 function ExpensesView({ onBack, colors }: any) {
