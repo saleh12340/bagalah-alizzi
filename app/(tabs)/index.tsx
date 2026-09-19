@@ -71,12 +71,8 @@ export default function HomeScreen() {
       ? "المصروفات"
       : "الإعدادات";
 
-  function openNewInvoiceMode(mode: "stock" | "free") {
+  function openNewInvoiceMode(_mode: "stock" | "free") {
     setSection("invoice");
-    // navigate into invoice flow; existing invoice modal logic lives inside invoice view
-    // We'll rely on the invoice component to show a creation UI when section===invoice
-    // For now just alert to confirm.
-    Alert.alert("إنشاء فاتورة", `فتح واجهة إنشاء الفاتورة (${mode})`);
   }
 
   return (
@@ -169,6 +165,22 @@ export default function HomeScreen() {
           {section === "settings" && <SettingsView colors={colors} onBack={() => setSection("home")} />}
         </ScrollView>
 
+        <View style={[styles.bottomNav, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
+          {([
+            ["home", "الرئيسية", "house.fill"],
+            ["invoice", "الفواتير", "receipt"],
+            ["stock", "المخزون", "cube.box.fill"],
+            ["customers", "الحسابات", "person.3.fill"],
+            ["reports", "التقارير", "chart.bar.fill"],
+            ["expenses", "المصروفات", "creditcard.fill"],
+          ] as const).map(([key, label, icon]) => (
+            <Pressable key={key} onPress={() => setSection(key as Section)} style={styles.navItem}>
+              <IconSymbol name={icon} size={19} color={section === key ? colors.primary : colors.muted} />
+              <Text style={[styles.navLabel, { color: section === key ? colors.primary : colors.muted }]}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
+
         <FAB onPress={() => openNewInvoiceMode("stock")} />
       </View>
     </ScreenContainer>
@@ -176,12 +188,25 @@ export default function HomeScreen() {
 }
 
 function InvoiceView({ onBack, products, customers, colors, storeName }: any) {
-  const [lines, setLines] = useState<any[]>([]);
+  const utils = trpc.useUtils();
+  const [lines, setLines] = useState<any[]>([{ description: "", quantity: 1, total: 0, unitPrice: 0 }]);
   const [customer, setCustomer] = useState<any>(null);
   const [notes, setNotes] = useState("");
   const [editId, setEditId] = useState<number | null>(null);
 
-  const total = useMemo(() => lines.reduce((s, x) => s + Number(x.unitPrice || 0) * Number(x.quantity || 0), 0), [lines]);
+  const total = useMemo(() => lines.reduce((s, x) => s + Number(x.total || 0), 0), [lines]);
+  const recentQ = trpc.freeInvoices.recent.useQuery({ limit: 20 });
+
+  function updateLine(index: number, patch: any) {
+    setLines((items) => items.map((x, i) => {
+      if (i !== index) return x;
+      const next = { ...x, ...patch };
+      const q = Number(next.quantity) || 0;
+      const t = Number(next.total) || 0;
+      next.unitPrice = q > 0 ? t / q : 0;
+      return next;
+    }));
+  }
 
   const createSale = trpc.freeInvoices.create.useMutation({
     onSuccess: async (d) => {
@@ -238,6 +263,7 @@ function InvoiceView({ onBack, products, customers, colors, storeName }: any) {
         notes: notes || undefined,
       });
     }
+    await utils.freeInvoices.recent.invalidate();
     return payload;
   }
 
@@ -320,29 +346,46 @@ function InvoiceView({ onBack, products, customers, colors, storeName }: any) {
       </View>
 
       <Card>
+        <Field label="اسم العميل (اختياري)" value={customer?.name || ""} onChangeText={(text) => setCustomer({ name: text })} placeholder="اكتب اسم العميل" />
         <Field label="ملاحظات" value={notes} onChangeText={setNotes} placeholder="ملاحظات داخل الفاتورة" />
 
         {lines.map((l, idx) => (
-          <View key={idx} style={{ marginBottom: 8 }}>
-            <TextInput
-              value={l.description}
-              onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, description: t } : x)))}
-              placeholder="وصف البند"
-              style={{ borderWidth: 1, borderColor: colors.border, padding: 8, borderRadius: 8, marginBottom: 6, backgroundColor: colors.surface }}
-            />
-            <View style={{ flexDirection: "row-reverse", gap: 8 }}>
+          <View key={idx} style={[styles.invoiceLine, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+            <View style={styles.invoiceHeaderRow}>
+              <Text style={[styles.lineHeader, { color: colors.muted }]}>الإجمالي</Text>
+              <Text style={[styles.lineHeader, { color: colors.muted }]}>الكمية</Text>
+              <Text style={[styles.lineHeader, { color: colors.muted, flex: 1.5 }]}>اسم الصنف</Text>
+              <Text style={[styles.lineHeader, { color: colors.muted }]}>سعر الوحدة</Text>
+            </View>
+            <View style={styles.invoiceInputRow}>
               <TextInput
-                value={String(l.quantity)}
-                onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, quantity: Number(t) || 0 } : x)))}
-                keyboardType="number-pad"
-                style={{ flex: 1, borderWidth: 1, borderColor: colors.border, padding: 8, borderRadius: 8, backgroundColor: colors.surface }}
-              />
-              <TextInput
-                value={String(l.unitPrice)}
-                onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, unitPrice: Number(t) || 0 } : x)))}
+                value={String(l.total || "")}
+                onChangeText={(t) => updateLine(idx, { total: Number(t.replace(",", ".")) || 0 })}
                 keyboardType="decimal-pad"
-                style={{ flex: 1, borderWidth: 1, borderColor: colors.border, padding: 8, borderRadius: 8, backgroundColor: colors.surface }}
+                placeholder="0.00"
+                style={[styles.cellInput, styles.totalInput, { color: colors.foreground, borderColor: colors.border }]}
               />
+              <TextInput
+                value={String(l.quantity ?? "")}
+                onChangeText={(t) => updateLine(idx, { quantity: Number(t.replace(",", ".")) || 0 })}
+                keyboardType="decimal-pad"
+                placeholder="1"
+                style={[styles.cellInput, { color: colors.foreground, borderColor: colors.border }]}
+              />
+              <TextInput
+                value={l.description}
+                onChangeText={(t) => updateLine(idx, { description: t })}
+                placeholder="اسم الصنف"
+                style={[styles.cellInput, { flex: 1.5, color: colors.foreground, borderColor: colors.border }]}
+              />
+              <TextInput
+                value={Number(l.unitPrice || 0).toFixed(2)}
+                editable={false}
+                style={[styles.cellInput, styles.unitInput, { color: colors.muted, borderColor: colors.border }]}
+              />
+              <Pressable onPress={() => setLines((items) => items.filter((_, i) => i !== idx))} style={styles.deleteCell}>
+                <Text style={{ color: "#fff", fontWeight: "800" }}>حذف</Text>
+              </Pressable>
             </View>
           </View>
         ))}
@@ -429,6 +472,41 @@ function CustomersView({ customers, onBack, colors }: any) {
   );
 }
 
+function ExpensesView({ onBack, colors }: any) {
+  const utils = trpc.useUtils();
+  const { data = [] } = trpc.expenses.list.useQuery();
+  const create = trpc.expenses.create.useMutation({ onSuccess: () => utils.expenses.list.invalidate() });
+  const remove = trpc.expenses.delete.useMutation({ onSuccess: () => utils.expenses.list.invalidate() });
+  const [category, setCategory] = useState("");
+  const [amount, setAmount] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const add = async () => {
+    const value = Number(amount);
+    if (!category.trim() || value <= 0) return Alert.alert("تنبيه", "أدخل نوع المصروف والمبلغ.");
+    try { await create.mutateAsync({ category: category.trim(), amount: value, notes: notes.trim() || undefined }); setCategory(""); setAmount(""); setNotes(""); }
+    catch (e: any) { Alert.alert("خطأ", e?.message || "تعذر حفظ المصروف."); }
+  };
+
+  return <View>
+    <View style={styles.subHeader}><Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800" }}>المصروفات</Text><Pressable onPress={onBack}><IconSymbol name="xmark" size={20} color={colors.muted} /></Pressable></View>
+    <Card>
+      <Field label="نوع المصروف" value={category} onChangeText={setCategory} placeholder="مثال: كهرباء" />
+      <Field label="المبلغ" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder="0.00" />
+      <Field label="ملاحظات" value={notes} onChangeText={setNotes} placeholder="اختياري" />
+      <Pressable onPress={add} style={[styles.primaryBtn, { backgroundColor: colors.primary }]}><Text style={styles.primaryBtnText}>إضافة المصروف</Text></Pressable>
+    </Card>
+    <Card style={{ marginTop: 12 }}>
+      {(data as any[]).map((x: any) => <View key={x.id} style={[styles.listRow, { borderBottomColor: colors.border }]}>
+        <View style={{ flex: 1 }}><Text style={{ color: colors.foreground, fontWeight: "700" }}>{x.category}</Text><Text style={{ color: colors.muted, fontSize: 12 }}>{x.notes || new Date(x.createdAt).toLocaleString("ar-SA")}</Text></View>
+        <Text style={{ color: colors.foreground, fontWeight: "800" }}>{money(x.amount)}</Text>
+        <Pressable onPress={() => Alert.alert("حذف المصروف", "هل تريد حذف هذا المصروف؟", [{ text: "إلغاء", style: "cancel" }, { text: "حذف", style: "destructive", onPress: () => remove.mutate({ id: x.id }) }])}><Text style={{ color: "#B42318", marginRight: 10 }}>حذف</Text></Pressable>
+      </View>)}
+    </Card>
+    <View style={{ height: 90 }} />
+  </View>;
+}
+
 function ReportsView({ report, onBack, colors }: any) {
   return (
     <View>
@@ -443,7 +521,10 @@ function ReportsView({ report, onBack, colors }: any) {
         <Text style={{ color: colors.foreground, fontWeight: "700" }}>ملخّص اليوم</Text>
         <View style={{ marginTop: 8 }}>
           <Text style={{ color: colors.muted }}>إجمالي مبيعات: {money(report.totalSales || 0)}</Text>
-          <Text style={{ color: colors.muted }}>عدد الفواتير: {report.invoicesCount || 0}</Text>
+          <Text style={{ color: colors.muted }}>عدد الفواتير: {(report.invoices || 0) + (report.freeInvoices || 0)}</Text>
+          <Text style={{ color: colors.muted }}>المصروفات: {money(report.expenses || 0)}</Text>
+          <Text style={{ color: colors.muted }}>صافي الربح: {money(report.netProfit || 0)}</Text>
+          <Text style={{ color: colors.muted }}>المخزون المنخفض: {report.lowStock || 0}</Text>
         </View>
       </Card>
 
@@ -489,7 +570,22 @@ function SettingsView({ colors, onBack }: any) {
 
 const styles = StyleSheet.create({
   page: { flex: 1 },
-  scroll: { paddingBottom: 20 },
+  scroll: { paddingBottom: 90 },
+  bottomNav: { position: "absolute", left: 0, right: 0, bottom: 0, minHeight: 68, borderTopWidth: 1, flexDirection: "row-reverse", justifyContent: "space-around", alignItems: "center", paddingHorizontal: 4, paddingBottom: 4 },
+  navItem: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 7 },
+  navLabel: { fontSize: 9, marginTop: 3, fontWeight: "700" },
+  subHeader: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
+  primaryBtn: { padding: 13, borderRadius: 10, alignItems: "center", marginTop: 8 },
+  primaryBtnText: { color: "#fff", fontWeight: "800" },
+  listRow: { flexDirection: "row-reverse", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, gap: 8 },
+  invoiceLine: { borderWidth: 1, borderRadius: 12, padding: 8, marginTop: 10 },
+  invoiceHeaderRow: { flexDirection: "row-reverse", gap: 5, marginBottom: 5 },
+  invoiceInputRow: { flexDirection: "row-reverse", gap: 5, alignItems: "center" },
+  lineHeader: { flex: 1, fontSize: 10, textAlign: "center" },
+  cellInput: { flex: 1, minHeight: 42, borderWidth: 1, borderRadius: 8, paddingHorizontal: 6, textAlign: "right", fontSize: 13 },
+  totalInput: { fontWeight: "900" },
+  unitInput: { backgroundColor: "transparent" },
+  deleteCell: { minHeight: 42, paddingHorizontal: 7, borderRadius: 8, backgroundColor: "#B42318", alignItems: "center", justifyContent: "center" },
   header: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 15 },
   brand: { fontSize: 13, fontWeight: "800" },
   title: { fontSize: 18, fontWeight: "700" },
