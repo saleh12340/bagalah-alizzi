@@ -23,6 +23,7 @@ import { Stat as StatCard } from "@/components/ui/Stat";
 import { ActionRow } from "@/components/ui/ActionRow";
 import { FAB } from "@/components/ui/FAB";
 import { Field } from "@/components/ui/Field";
+import { trpc } from "@/lib/trpc";
 
 type Section = "home" | "invoice" | "stock" | "customers" | "reports" | "expenses" | "settings";
 
@@ -182,7 +183,7 @@ function InvoiceView({ onBack, products, customers, colors, storeName }: any) {
 
   const total = useMemo(() => lines.reduce((s, x) => s + Number(x.unitPrice || 0) * Number(x.quantity || 0), 0), [lines]);
 
-  const createSale = trpc.sales.create.useMutation({
+  const createSale = trpc.freeInvoices.create.useMutation({
     onSuccess: async (d) => {
       // after saving, we could refresh queries if needed. keeping simple for now.
       console.log('sale saved', d);
@@ -192,14 +193,14 @@ function InvoiceView({ onBack, products, customers, colors, storeName }: any) {
     }
   });
 
-  const updateSale = trpc.sales.update.useMutation({
+  const updateSale = trpc.freeInvoices.update.useMutation({
     onSuccess: async (d) => {
       console.log('sale updated', d);
     },
     onError: (err) => console.warn('sale update failed', err),
   });
 
-  const deleteSale = trpc.sales.delete.useMutation({
+  const deleteSale = trpc.freeInvoices.delete.useMutation({
     onSuccess: async () => {
       console.log('sale deleted');
     },
@@ -216,9 +217,9 @@ function InvoiceView({ onBack, products, customers, colors, storeName }: any) {
     try {
       // Persist invoice to backend first
       if (editId) {
-        await updateSale.mutateAsync({ id: editId, items: payload, notes: notes || undefined });
+        await updateSale.mutateAsync({ id: editId, items: payload.map((x) => ({ description: x.name, quantity: x.quantity, unitPrice: x.unitPrice })), notes: notes || undefined });
       } else {
-        await createSale.mutateAsync({ items: payload, notes: notes || undefined, customerId: undefined });
+        await createSale.mutateAsync({ items: payload.map((x) => ({ description: x.name, quantity: x.quantity, unitPrice: x.unitPrice })), notes: notes || undefined });
       }
 
       // Then generate & share PDF
