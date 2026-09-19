@@ -211,9 +211,45 @@ function InvoiceView({ onBack, products, customers, colors, storeName }: any) {
     setLines((old) => [...old, { description: "", quantity: 1, unitPrice: 0 }]);
   }
 
+  function buildPayload() {
+    return lines.map((l) => ({
+      name: l.description || "-",
+      quantity: Number(l.quantity) || 0,
+      unitPrice: Number(l.unitPrice) || 0,
+    }));
+  }
+
+  async function persistInvoice() {
+    const payload = buildPayload();
+    if (!payload.length) {
+      Alert.alert("تنبيه", "أضف بنداً واحداً على الأقل.");
+      return null;
+    }
+
+    if (editId) {
+      await updateSale.mutateAsync({
+        id: editId,
+        items: payload.map((x) => ({ description: x.name, quantity: x.quantity, unitPrice: x.unitPrice })),
+        notes: notes || undefined,
+      });
+    } else {
+      await createSale.mutateAsync({
+        items: payload.map((x) => ({ description: x.name, quantity: x.quantity, unitPrice: x.unitPrice })),
+        notes: notes || undefined,
+      });
+    }
+    return payload;
+  }
+
   async function saveInvoice() {
-    if (!lines.length) return Alert.alert("تنبيه", "أضف بنداً واحداً على الأقل.");
-    const payload = lines.map((l) => ({ name: l.description || "-", quantity: Number(l.quantity) || 0, unitPrice: Number(l.unitPrice) || 0 }));
+    const payload = await persistInvoice();
+    if (!payload) return;
+    Alert.alert("تم الحفظ", "تم حفظ الفاتورة بنجاح.");
+  }
+
+  async function printOrShareInvoice() {
+    const payload = await persistInvoice();
+    if (!payload) return;
     try {
       // Persist invoice to backend first
       if (editId) {
@@ -323,10 +359,10 @@ function InvoiceView({ onBack, products, customers, colors, storeName }: any) {
         </View>
 
         <View style={{ marginTop: 12, flexDirection: "row-reverse", gap: 8 }}>
-          <Pressable onPress={saveInvoice} style={{ flex: 1, padding: 12, borderRadius: 10, backgroundColor: colors.primary, alignItems: "center" }}>
+          <Pressable onPress={printOrShareInvoice} style={{ flex: 1, padding: 12, borderRadius: 10, backgroundColor: colors.primary, alignItems: "center" }}>
             <Text style={{ color: "#fff", fontWeight: "800" }}>طباعة/مشاركة</Text>
           </Pressable>
-          <Pressable onPress={() => Alert.alert("حفظ مؤقت", "تم حفظ الفاتورة محليًا (محاكاة)")} style={{ flex: 1, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: colors.border, alignItems: "center" }}>
+          <Pressable onPress={saveInvoice} style={{ flex: 1, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: colors.border, alignItems: "center" }}>
             <Text style={{ color: colors.foreground, fontWeight: "700" }}>حفظ</Text>
           </Pressable>
         </View>
