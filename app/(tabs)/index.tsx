@@ -1,136 +1,459 @@
-import { useEffect, useMemo, useState } from "react";
-import { Alert, FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import React, { useMemo, useState } from "react";
+import {
+  Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
 import { shareInvoicePdf, printReceipt } from "@/lib/invoice-sharing";
 import { loadLocalState, saveLocalState, type LocalCustomer, type LocalExpense, type LocalInvoice, type LocalProduct, type LocalState } from "@/lib/local-store";
 
+import { Card } from "@/components/ui/Card";
+import { Stat as StatCard } from "@/components/ui/Stat";
+import { ActionRow } from "@/components/ui/ActionRow";
+import { FAB } from "@/components/ui/FAB";
+import { Field } from "@/components/ui/Field";
+
 type Section = "home" | "invoice" | "stock" | "customers" | "reports" | "expenses" | "settings";
-type DraftLine = { productId:number; name:string; quantity:number; price:number; stock:number };
-const money=(v:number)=>`${Number(v||0).toFixed(2)} ر.س`;
-const now=()=>new Date().toISOString();
 
-export default function HomeScreen(){
-  const colors=useColors();
-  const [state,setState]=useState<LocalState|null>(null);
-  const [section,setSection]=useState<Section>("home");
-  const [search,setSearch]=useState("");
-  const [showInvoice,setShowInvoice]=useState(false);
-  const [showCustomer,setShowCustomer]=useState(false);
-  const [showProduct,setShowProduct]=useState(false);
-  const [invoiceLines,setInvoiceLines]=useState<DraftLine[]>([]);
-  const [customerId,setCustomerId]=useState<number|null>(null);
-  const [customerName,setCustomerName]=useState("");
-  const [customerPhone,setCustomerPhone]=useState("");
-  const [productName,setProductName]=useState("");
-  const [productPurchase,setProductPurchase]=useState("");
-  const [productSale,setProductSale]=useState("");
-  const [productStock,setProductStock]=useState("");
-  const [productMin,setProductMin]=useState("");
-  const [expenseCategory,setExpenseCategory]=useState("");
-  const [expenseAmount,setExpenseAmount]=useState("");
+const money = (v: any, c = "ر.س") => `${Number(v || 0).toFixed(2)} ${c}`;
+const todayRange = () => {
+  const from = new Date();
+  from.setHours(0, 0, 0, 0);
+  const to = new Date(from);
+  to.setDate(to.getDate() + 1);
+  return { from, to };
+};
 
-  useEffect(()=>{ void loadLocalState().then(setState); },[]);
-  const products=state?.products??[];
-  const customers=state?.customers??[];
-  const invoices=state?.invoices??[];
-  const expenses=state?.expenses??[];
-  const lowStock=products.filter(p=>p.stock<=p.minStock);
-  const filteredProducts=products.filter(p=>!search.trim()||p.name.includes(search.trim()));
-  const filteredCustomers=customers.filter(c=>!search.trim()||c.name.includes(search.trim())||c.phone.includes(search.trim()));
-  const draftTotal=useMemo(()=>invoiceLines.reduce((s,x)=>s+x.quantity*x.price,0),[invoiceLines]);
-  const todayKey=new Date().toISOString().slice(0,10);
-  const todayInvoices=invoices.filter(x=>x.date.slice(0,10)===todayKey);
-  const todayExpenses=expenses.filter(x=>x.date.slice(0,10)===todayKey);
-  const todaySales=todayInvoices.reduce((s,x)=>s+x.total,0);
-  const todayProfit=todayInvoices.reduce((s,x)=>s+x.items.reduce((z,i)=>z+i.quantity*i.unitPrice,0),0);
-  const title={home:"نظرة عامة",invoice:"الفواتير",stock:"المخزون والأصناف",customers:"العملاء والحسابات",reports:"التقارير",expenses:"المصروفات",settings:"الإعدادات"}[section];
+export default function HomeScreen() {
+  const colors = useColors();
+  const [section, setSection] = useState<Section>("home");
+  const [search, setSearch] = useState("");
 
-  const persist=async(next:LocalState)=>{setState(next);await saveLocalState(next);};
-  const addLine=(p:LocalProduct)=>setInvoiceLines(old=>{const f=old.find(x=>x.productId===p.id);if(f)return old.map(x=>x.productId===p.id?{...x,quantity:Math.min(x.quantity+1,p.stock)}:x);return p.stock>0?[...old,{productId:p.id,name:p.name,quantity:1,price:p.salePrice,stock:p.stock}]:old;});
+  const productsQ = trpc.products.list.useQuery({ search: search || undefined });
+  const customersQ = trpc.customers.list.useQuery({ search: search || undefined });
+  const salesQ = trpc.sales.recent.useQuery({ limit: 60 });
+  const reportQ = trpc.reports.summary.useQuery(todayRange());
+  const activitiesQ = trpc.activity.useQuery({ limit: 50 });
+  const settingsQ = trpc.settings.get.useQuery();
 
-  const saveCustomer=async()=>{
-    if(!state)return;
-    if(!customerName.trim())return Alert.alert("تنبيه","اكتب اسم العميل.");
-    const id=state.nextId;
-    const customer:LocalCustomer={id,name:customerName.trim(),phone:customerPhone.trim(),balance:0};
-    await persist({...state,customers:[...state.customers,customer],nextId:id+1});
-    closeCustomer();Alert.alert("تم الحفظ","تمت إضافة العميل إلى الحسابات.");
-  };
-  const saveProduct=async()=>{
-    if(!state)return;
-    const sale=Number(productSale), purchase=Number(productPurchase)||0, stock=Number(productStock)||0, min=Number(productMin)||0;
-    if(!productName.trim()||!Number.isFinite(sale)||sale<0)return Alert.alert("تنبيه","أدخل اسم الصنف وسعر بيع صحيح.");
-    const id=state.nextId;
-    const product:LocalProduct={id,name:productName.trim(),purchasePrice:purchase,salePrice:sale,stock,minStock:min,unit:"حبة"};
-    await persist({...state,products:[...state.products,product],nextId:id+1});
-    closeProduct();Alert.alert("تم الحفظ","تمت إضافة الصنف إلى المخزون.");
-  };
-  const saveExpense=async()=>{
-    if(!state)return;
-    const amount=Number(expenseAmount);
-    if(!expenseCategory.trim()||!amount)return Alert.alert("تنبيه","أدخل نوع المصروف والمبلغ.");
-    const expense:LocalExpense={id:state.nextId,category:expenseCategory.trim(),amount,date:now()};
-    await persist({...state,expenses:[...state.expenses,expense],nextId:state.nextId+1});
-    setExpenseCategory("");setExpenseAmount("");Alert.alert("تم الحفظ","تم تسجيل المصروف.");
-  };
-  const saveInvoice=async()=>{
-    if(!state)return;
-    if(!invoiceLines.length)return Alert.alert("الفاتورة فارغة","أضف صنفًا واحدًا على الأقل.");
-    const bad=invoiceLines.find(x=>x.quantity>x.stock);if(bad)return Alert.alert("المخزون غير كافٍ",`${bad.name}: المتوفر ${bad.stock}`);
-    const customer=customerId?customers.find(c=>c.id===customerId):undefined;
-    const invoiceNo=`${Date.now()}`.slice(-8);
-    const invoice:LocalInvoice={id:state.nextId,invoiceNo,date:now(),customerId,customerName:customer?.name??"نقدي",total:draftTotal,paid:customer?0:draftTotal,items:invoiceLines.map(x=>({productId:x.productId,name:x.name,quantity:x.quantity,unitPrice:x.price}))};
-    const nextProducts=state.products.map(p=>{const line=invoiceLines.find(x=>x.productId===p.id);return line?{...p,stock:Math.max(0,p.stock-line.quantity)}:p;});
-    const nextCustomers=customer?state.customers.map(c=>c.id===customer.id?{...c,balance:c.balance+draftTotal}:c):state.customers;
-    const next={...state,products:nextProducts,customers:nextCustomers,invoices:[invoice,...state.invoices],nextId:state.nextId+1};
-    await persist(next);setInvoiceLines([]);setCustomerId(null);setShowInvoice(false);Keyboard.dismiss();
-    Alert.alert("تم حفظ الفاتورة",`رقم ${invoiceNo}\nالإجمالي ${money(draftTotal)}`,[{text:"إغلاق"},{text:"PDF / مشاركة",onPress:()=>void shareInvoicePdf(invoice.items,invoice.customerName)}]);
-  };
+  const products = productsQ.data || [];
+  const customers = customersQ.data || [];
+  const sales = salesQ.data || [];
+  const report = reportQ.data || {};
+  const activities = activitiesQ.data || [];
 
-  const closeCustomer=()=>{Keyboard.dismiss();setShowCustomer(false);setCustomerName("");setCustomerPhone("");};
-  const closeProduct=()=>{Keyboard.dismiss();setShowProduct(false);setProductName("");setProductPurchase("");setProductSale("");setProductStock("");setProductMin("");};
-  if(!state)return <ScreenContainer className="px-4 pt-3" safeAreaClassName="bg-background"><View style={styles.loading}><Text style={{fontSize:18,color:colors.foreground}}>جاري تجهيز بيانات بقالة العزي...</Text></View></ScreenContainer>;
+  const lowStock = products.filter((p: any) => Number(p.stock) <= Number(p.minStock));
 
-  return <ScreenContainer className="px-4 pt-3" safeAreaClassName="bg-background">
-    <View style={styles.page}>
-      <View style={styles.header}><View><Text style={[styles.brand,{color:colors.primary}]}>بقالة العزي</Text><Text style={[styles.title,{color:colors.foreground}]}>{title}</Text></View><View style={[styles.logo,{backgroundColor:colors.primary}]}><IconSymbol name="cart.fill" size={24} color="#fff"/></View></View>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        {section==="home"&&<HomeView colors={colors} sales={todaySales} profit={todayProfit} lowStock={lowStock.length} customers={customers.length} products={products.length} invoices={todayInvoices.length} onInvoice={()=>setShowInvoice(true)} onCustomer={()=>setShowCustomer(true)} onProduct={()=>setShowProduct(true)} onSection={setSection}/>} 
-        {section==="invoice"&&<InvoicesView colors={colors} invoices={invoices} onNew={()=>setShowInvoice(true)}/>} 
-        {section==="stock"&&<StockView colors={colors} products={filteredProducts} lowStock={lowStock} search={search} setSearch={setSearch} onAdd={()=>setShowProduct(true)} onInvoice={addLine}/>} 
-        {section==="customers"&&<CustomersView colors={colors} customers={filteredCustomers} search={search} setSearch={setSearch} onAdd={()=>setShowCustomer(true)}/>} 
-        {section==="reports"&&<ReportsView colors={colors} invoices={todayInvoices} expenses={todayExpenses} allInvoices={invoices} allExpenses={expenses}/>} 
-        {section==="expenses"&&<ExpensesView colors={colors} expenses={expenses} category={expenseCategory} amount={expenseAmount} setCategory={setExpenseCategory} setAmount={setExpenseAmount} onSave={saveExpense}/>} 
-        {section==="settings"&&<SettingsView colors={colors} products={products.length} customers={customers.length}/>}<View style={{height:95}}/>
-      </ScrollView>
-      <View style={[styles.tabBar,{backgroundColor:colors.surface,borderColor:colors.border}]}><Tab label="الرئيسية" icon="house.fill" active={section==="home"} colors={colors} onPress={()=>setSection("home")}/><Tab label="الفواتير" icon="doc.text.fill" active={section==="invoice"} colors={colors} onPress={()=>setSection("invoice")}/><Tab label="العملاء" icon="person.2.fill" active={section==="customers"} colors={colors} onPress={()=>setSection("customers")}/><Tab label="المخزون" icon="shippingbox.fill" active={section==="stock"} colors={colors} onPress={()=>setSection("stock")}/><Tab label="المزيد" icon="ellipsis" active={section==="reports"||section==="expenses"||section==="settings"} colors={colors} onPress={()=>setSection("reports")}/></View>
-    </View>
+  const title =
+    section === "home"
+      ? "الرئيسية"
+      : section === "invoice"
+      ? "الفواتير"
+      : section === "stock"
+      ? "الأصناف والمخزون"
+      : section === "customers"
+      ? "الحسابات"
+      : section === "reports"
+      ? "التقارير"
+      : section === "expenses"
+      ? "المصروفات"
+      : "الإعدادات";
 
-    <FormModal visible={showCustomer} title="إضافة عميل جديد" colors={colors} close={closeCustomer} onSave={saveCustomer} saveText="موافق وحفظ العميل"><Field label="اسم العميل" value={customerName} onChangeText={setCustomerName} colors={colors} placeholder="مثال: أحمد محمد" returnKeyType="next"/><Field label="رقم الهاتف" value={customerPhone} onChangeText={setCustomerPhone} colors={colors} placeholder="رقم الجوال" keyboardType="phone-pad" returnKeyType="done"/></FormModal>
-    <FormModal visible={showProduct} title="إضافة صنف جديد" colors={colors} close={closeProduct} onSave={saveProduct} saveText="موافق وحفظ الصنف"><Field label="اسم الصنف" value={productName} onChangeText={setProductName} colors={colors} placeholder="مثال: كرتون مياه" returnKeyType="next"/><View style={styles.two}><Field label="سعر الشراء" value={productPurchase} onChangeText={setProductPurchase} colors={colors} placeholder="0" keyboardType="decimal-pad" returnKeyType="next"/><Field label="سعر البيع" value={productSale} onChangeText={setProductSale} colors={colors} placeholder="0" keyboardType="decimal-pad" returnKeyType="next"/></View><View style={styles.two}><Field label="الرصيد الافتتاحي" value={productStock} onChangeText={setProductStock} colors={colors} placeholder="0" keyboardType="decimal-pad" returnKeyType="next"/><Field label="الحد الأدنى" value={productMin} onChangeText={setProductMin} colors={colors} placeholder="0" keyboardType="decimal-pad" returnKeyType="done"/></View></FormModal>
+  function openNewInvoiceMode(mode: "stock" | "free") {
+    setSection("invoice");
+    // navigate into invoice flow; existing invoice modal logic lives inside invoice view
+    // We'll rely on the invoice component to show a creation UI when section===invoice
+    // For now just alert to confirm.
+    Alert.alert("إنشاء فاتورة", `فتح واجهة إنشاء الفاتورة (${mode})`);
+  }
 
-    <Modal visible={showInvoice} animationType="slide" transparent statusBarTranslucent onRequestClose={()=>setShowInvoice(false)}><KeyboardAvoidingView style={styles.modalRoot} behavior={Platform.OS==="android"?"padding":"padding"} keyboardVerticalOffset={Platform.OS==="android"?8:0}><View style={styles.backdrop}><View style={[styles.invoiceModal,{backgroundColor:colors.background}]}><ModalHeader title="فاتورة مبيعات جديدة" colors={colors} close={()=>{Keyboard.dismiss();setShowInvoice(false)}}/><ScrollView style={{flex:1}} contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled"><Text style={[styles.label,{color:colors.muted}]}>العميل (اختياري)</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.pills}><Pill label="نقدي" active={customerId===null} colors={colors} onPress={()=>setCustomerId(null)}/>{customers.map(c=><Pill key={c.id} label={c.name} active={customerId===c.id} colors={colors} onPress={()=>setCustomerId(c.id)}/>)}</ScrollView><View style={[styles.searchBox,{backgroundColor:colors.surface,borderColor:colors.border}]}><IconSymbol name="magnifyingglass" size={18} color={colors.muted}/><TextInput value={search} onChangeText={setSearch} placeholder="ابحث عن صنف لإضافته" placeholderTextColor={colors.muted} style={[styles.input,{color:colors.foreground}]}/></View><FlatList data={filteredProducts} keyExtractor={p=>String(p.id)} scrollEnabled={false} keyboardShouldPersistTaps="handled" renderItem={({item})=><ProductRow p={item} colors={colors} onPress={()=>addLine(item)}/>} ListEmptyComponent={<Text style={[styles.empty,{color:colors.muted}]}>لا توجد أصناف مطابقة.</Text>}/><Text style={[styles.sectionTitle,{color:colors.foreground}]}>تفاصيل الفاتورة</Text>{invoiceLines.map(x=><View key={x.productId} style={[styles.invoiceLine,{borderBottomColor:colors.border}]}><View style={{flex:1}}><Text style={[styles.rowTitle,{color:colors.foreground}]}>{x.name}</Text><Text style={[styles.rowSub,{color:colors.muted}]}>{x.quantity} × {money(x.price)}</Text></View><Text style={[styles.lineTotal,{color:colors.primary}]}>{money(x.quantity*x.price)}</Text></View>)}<View style={styles.total}><Text style={[styles.totalLabel,{color:colors.muted}]}>الإجمالي</Text><Text style={[styles.totalValue,{color:colors.primary}]}>{money(draftTotal)}</Text></View></ScrollView><Pressable onPress={saveInvoice} style={[styles.primaryButton,{backgroundColor:colors.primary}]}><Text style={styles.buttonText}>حفظ الفاتورة وتحديث المخزون</Text></Pressable></View></View></KeyboardAvoidingView></Modal>
-  </ScreenContainer>;
+  return (
+    <ScreenContainer className="px-4 pt-3" safeAreaClassName="bg-background">
+      <View style={styles.page}>
+        <View style={styles.header}>
+          <View>
+            <Text style={[styles.brand, { color: colors.primary }]}>بقالة العزي</Text>
+            <Text style={[styles.title, { color: colors.foreground }]}>{title}</Text>
+          </View>
+          <Pressable
+            onPress={() => setSection("settings")}
+            style={({ pressed }) => [{ padding: 8, borderRadius: 8, backgroundColor: colors.surface }, pressed && { opacity: 0.7 }]}
+          >
+            <IconSymbol name="gearshape.fill" size={18} color={colors.primary} />
+          </Pressable>
+        </View>
+
+        <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          {section === "home" && (
+            <View>
+              <Card style={{ marginBottom: 12 }}>
+                <View style={{ flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" }}>
+                  <View>
+                    <Text style={{ color: colors.muted, fontSize: 13 }}>نظرة سريعة</Text>
+                    <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800" }}>عرض موجز للنشاط اليومي</Text>
+                  </View>
+                  <ActionRow
+                    actions={[
+                      { icon: "receipt", label: "فواتير", onPress: () => setSection("invoice") },
+                      { icon: "cube.box.fill", label: "المخزون", onPress: () => setSection("stock") },
+                      { icon: "person.3.fill", label: "الحسابات", onPress: () => setSection("customers") },
+                      { icon: "chart.bar.fill", label: "التقارير", onPress: () => setSection("reports") },
+                    ]}
+                  />
+                </View>
+
+                <View style={{ marginTop: 12, flexDirection: "row-reverse", justifyContent: "space-between", gap: 10 }}>
+                  <StatCard label="إجمالي المبيعات" value={money(report.totalSales || 0)} accent />
+                  <StatCard label="عدد الفواتير" value={report.invoicesCount || 0} />
+                  <StatCard label="المخزون المنخفض" value={lowStock.length} />
+                </View>
+              </Card>
+
+              <Card style={{ marginBottom: 12 }}>
+                <Text style={{ color: colors.foreground, fontWeight: "700", marginBottom: 8 }}>الأنشطة الأخيرة</Text>
+                {activities.slice(0, 6).map((a: any) => (
+                  <View key={a.id} style={{ paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                    <Text style={{ color: colors.foreground }}>{a.summary}</Text>
+                    <Text style={{ color: colors.muted, fontSize: 12 }}>{new Date(a.createdAt).toLocaleString("ar-SA")}</Text>
+                  </View>
+                ))}
+              </Card>
+
+              <Card>
+                <Text style={{ color: colors.foreground, fontWeight: "700", marginBottom: 8 }}>اختصارات سريعة</Text>
+                <View style={{ marginTop: 8 }}>
+                  <ActionRow
+                    actions={[
+                      { icon: "plus", label: "فاتورة من المخزن", color: colors.primary, onPress: () => openNewInvoiceMode("stock") },
+                      { icon: "doc.on.doc.fill", label: "فاتورة حرة", color: "#2878C8", onPress: () => openNewInvoiceMode("free") },
+                      { icon: "person.badge.plus", label: "عميل جديد", color: "#8B5CF6", onPress: () => setSection("customers") },
+                    ]}
+                  />
+                </View>
+              </Card>
+
+              <View style={{ height: 90 }} />
+            </View>
+          )}
+
+          {section === "invoice" && (
+            <InvoiceView
+              onBack={() => setSection("home")}
+              products={products}
+              customers={customers}
+              colors={colors}
+              storeName={settingsQ.data?.storeName}
+            />
+          )}
+
+          {section === "stock" && (
+            <StockView products={products} onBack={() => setSection("home")} colors={colors} />
+          )}
+
+          {section === "customers" && <CustomersView customers={customers} onBack={() => setSection("home")} colors={colors} />}
+
+          {section === "reports" && <ReportsView report={report} onBack={() => setSection("home")} colors={colors} />}
+
+          {section === "settings" && <SettingsView colors={colors} onBack={() => setSection("home")} />}
+        </ScrollView>
+
+        <FAB onPress={() => openNewInvoiceMode("stock")} />
+      </View>
+    </ScreenContainer>
+  );
 }
 
-function HomeView({colors,sales,profit,lowStock,customers,products,invoices,onInvoice,onCustomer,onProduct,onSection}:{colors:any;sales:number;profit:number;lowStock:number;customers:number;products:number;invoices:number;onInvoice:()=>void;onCustomer:()=>void;onProduct:()=>void;onSection:(s:Section)=>void}){return <View><View style={styles.cards}><Stat title="مبيعات اليوم" value={money(sales)} colors={colors}/><Stat title="فواتير اليوم" value={String(invoices)} colors={colors}/><Stat title="الأصناف" value={String(products)} colors={colors}/><Stat title="العملاء" value={String(customers)} colors={colors}/></View><View style={styles.actionGrid}><Action title="فاتورة جديدة" icon="doc.text.fill" colors={colors} onPress={onInvoice}/><Action title="إضافة عميل" icon="person.badge.plus" colors={colors} onPress={onCustomer}/><Action title="إضافة صنف" icon="plus" colors={colors} onPress={onProduct}/><Action title="التقارير" icon="chart.bar.fill" colors={colors} onPress={()=>onSection("reports")}/></View><View style={[styles.notice,{backgroundColor:colors.surface,borderColor:colors.border}]}><Text style={[styles.sectionTitle,{color:colors.foreground}]}>حالة المخزون</Text><Text style={{color:lowStock?"#A56A00":colors.muted,fontSize:16}}>{lowStock?`يوجد ${lowStock} أصناف منخفضة المخزون.`:"المخزون بحالة جيدة."}</Text><Text style={[styles.rowSub,{color:colors.muted,marginTop:5}]}>بيانات التطبيق محفوظة محليًا على الهاتف.</Text></View></View>}
-function InvoicesView({colors,invoices,onNew}:{colors:any;invoices:LocalInvoice[];onNew:()=>void}){return <View><Pressable style={[styles.primaryButton,{backgroundColor:colors.primary}]} onPress={onNew}><Text style={styles.buttonText}>+ فاتورة جديدة</Text></Pressable>{invoices.length===0?<Empty colors={colors} text="لا توجد فواتير بعد."/>:invoices.map(i=><View key={i.id} style={[styles.card,{backgroundColor:colors.surface,borderColor:colors.border}]}><View style={styles.rowBetween}><Text style={[styles.rowTitle,{color:colors.foreground}]}>فاتورة #{i.invoiceNo}</Text><Text style={[styles.lineTotal,{color:colors.primary}]}>{money(i.total)}</Text></View><Text style={[styles.rowSub,{color:colors.muted}]}>{i.customerName} • {new Date(i.date).toLocaleString("ar-SA")}</Text><Text style={[styles.rowSub,{color:colors.muted}]}>{i.items.length} أصناف</Text></View>)}</View>}
-function StockView({colors,products,lowStock,search,setSearch,onAdd,onInvoice}:{colors:any;products:LocalProduct[];lowStock:LocalProduct[];search:string;setSearch:(v:string)=>void;onAdd:()=>void;onInvoice:(p:LocalProduct)=>void}){return <View><View style={styles.rowBetween}><Text style={[styles.sectionTitle,{color:colors.foreground}]}>{products.length} صنف</Text><Pressable style={[styles.smallButton,{backgroundColor:colors.primary}]} onPress={onAdd}><Text style={styles.buttonText}>+ إضافة صنف</Text></Pressable></View><View style={[styles.searchBox,{backgroundColor:colors.surface,borderColor:colors.border}]}><IconSymbol name="magnifyingglass" size={18} color={colors.muted}/><TextInput value={search} onChangeText={setSearch} placeholder="ابحث بالاسم" placeholderTextColor={colors.muted} style={[styles.input,{color:colors.foreground}]}/></View>{products.map(p=><Pressable key={p.id} onPress={()=>onInvoice(p)} style={[styles.card,{backgroundColor:colors.surface,borderColor:colors.border}]}><View style={styles.rowBetween}><View style={{flex:1}}><Text style={[styles.rowTitle,{color:colors.foreground}]}>{p.name}</Text><Text style={[styles.rowSub,{color:colors.muted}]}>{money(p.salePrice)} • شراء {money(p.purchasePrice)}</Text></View><View style={{alignItems:"flex-end"}}><Text style={[styles.stock,{color:p.stock<=p.minStock?"#A56A00":colors.primary}]}>{p.stock} {p.unit}</Text><Text style={[styles.rowSub,{color:colors.muted}]}>الحد {p.minStock}</Text></View></View></Pressable>)}{lowStock.length>0&&<Text style={{color:"#A56A00",marginTop:8}}>منخفض المخزون: {lowStock.length}</Text>}</View>}
-function CustomersView({colors,customers,search,setSearch,onAdd}:{colors:any;customers:LocalCustomer[];search:string;setSearch:(v:string)=>void;onAdd:()=>void}){return <View><View style={styles.rowBetween}><Text style={[styles.sectionTitle,{color:colors.foreground}]}>{customers.length} عملاء</Text><Pressable style={[styles.smallButton,{backgroundColor:colors.primary}]} onPress={onAdd}><Text style={styles.buttonText}>+ إضافة عميل</Text></Pressable></View><View style={[styles.searchBox,{backgroundColor:colors.surface,borderColor:colors.border}]}><IconSymbol name="magnifyingglass" size={18} color={colors.muted}/><TextInput value={search} onChangeText={setSearch} placeholder="ابحث باسم العميل" placeholderTextColor={colors.muted} style={[styles.input,{color:colors.foreground}]}/></View>{customers.map(c=><View key={c.id} style={[styles.card,{backgroundColor:colors.surface,borderColor:colors.border}]}><View style={styles.rowBetween}><View><Text style={[styles.rowTitle,{color:colors.foreground}]}>{c.name}</Text><Text style={[styles.rowSub,{color:colors.muted}]}>{c.phone||"بدون رقم"}</Text></View><Text style={[styles.lineTotal,{color:c.balance>0?"#A56A00":colors.primary}]}>{money(c.balance)}</Text></View></View>)}</View>}
-function ReportsView({colors,invoices,expenses,allInvoices,allExpenses}:{colors:any;invoices:LocalInvoice[];expenses:LocalExpense[];allInvoices:LocalInvoice[];allExpenses:LocalExpense[]}){const sales=invoices.reduce((s,x)=>s+x.total,0), exp=expenses.reduce((s,x)=>s+x.amount,0), allSales=allInvoices.reduce((s,x)=>s+x.total,0);return <View><Text style={[styles.sectionTitle,{color:colors.foreground}]}>تقرير اليوم</Text><View style={styles.cards}><Stat title="المبيعات" value={money(sales)} colors={colors}/><Stat title="المصروفات" value={money(exp)} colors={colors}/><Stat title="الصافي" value={money(sales-exp)} colors={colors}/><Stat title="إجمالي المبيعات" value={money(allSales)} colors={colors}/></View><Text style={[styles.sectionTitle,{color:colors.foreground,marginTop:18}]}>آخر المصروفات</Text>{expenses.slice(0,10).map(e=><View key={e.id} style={[styles.card,{backgroundColor:colors.surface,borderColor:colors.border}]}><View style={styles.rowBetween}><Text style={[styles.rowTitle,{color:colors.foreground}]}>{e.category}</Text><Text style={[styles.lineTotal,{color:colors.primary}]}>{money(e.amount)}</Text></View><Text style={[styles.rowSub,{color:colors.muted}]}>{new Date(e.date).toLocaleString("ar-SA")}</Text></View>)}</View>}
-function ExpensesView({colors,expenses,category,amount,setCategory,setAmount,onSave}:{colors:any;expenses:LocalExpense[];category:string;amount:string;setCategory:(v:string)=>void;setAmount:(v:string)=>void;onSave:()=>void}){return <View><Text style={[styles.sectionTitle,{color:colors.foreground}]}>تسجيل مصروف</Text><Field label="نوع المصروف" value={category} onChangeText={setCategory} colors={colors} placeholder="كهرباء، نقل، شراء..."/><Field label="المبلغ" value={amount} onChangeText={setAmount} colors={colors} placeholder="0" keyboardType="decimal-pad"/><Pressable style={[styles.primaryButton,{backgroundColor:colors.primary}]} onPress={onSave}><Text style={styles.buttonText}>حفظ المصروف</Text></Pressable><Text style={[styles.sectionTitle,{color:colors.foreground,marginTop:20}]}>المصروفات السابقة</Text>{expenses.slice(0,20).map(e=><View key={e.id} style={[styles.card,{backgroundColor:colors.surface,borderColor:colors.border}]}><View style={styles.rowBetween}><Text style={[styles.rowTitle,{color:colors.foreground}]}>{e.category}</Text><Text style={[styles.lineTotal,{color:colors.primary}]}>{money(e.amount)}</Text></View></View>)}</View>}
-function SettingsView({colors,products,customers}:{colors:any;products:number;customers:number}){return <View><View style={[styles.notice,{backgroundColor:colors.surface,borderColor:colors.border}]}><Text style={[styles.sectionTitle,{color:colors.foreground}]}>بقالة العزي للمواد الغذائية</Text><Text style={[styles.rowSub,{color:colors.muted}]}>التطبيق يعمل محليًا ويحفظ البيانات على الهاتف.</Text><Text style={[styles.rowSub,{color:colors.muted,marginTop:8}]}>الأصناف: {products} • العملاء: {customers}</Text></View></View>}
-function FormModal({visible,title,colors,close,onSave,saveText,children}:{visible:boolean;title:string;colors:any;close:()=>void;onSave:()=>void;saveText:string;children:React.ReactNode}){return <Modal visible={visible} animationType="slide" transparent statusBarTranslucent onRequestClose={close}><KeyboardAvoidingView style={styles.modalRoot} behavior="padding" keyboardVerticalOffset={Platform.OS==="android"?8:0}><View style={styles.backdrop}><View style={[styles.formModal,{backgroundColor:colors.background}]}><ModalHeader title={title} colors={colors} close={close}/><ScrollView style={{flex:1}} contentContainerStyle={styles.modalScroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">{children}<View style={{height:20}}/></ScrollView><Pressable onPress={()=>{Keyboard.dismiss();onSave()}} style={[styles.primaryButton,{backgroundColor:colors.primary}]}><Text style={styles.buttonText}>{saveText}</Text></Pressable></View></View></KeyboardAvoidingView></Modal>}
-function Field({label,value,onChangeText,colors,placeholder,keyboardType="default",returnKeyType="done"}:{label:string;value:string;onChangeText:(v:string)=>void;colors:any;placeholder:string;keyboardType?:any;returnKeyType?:any}){return <View style={styles.field}><Text style={[styles.label,{color:colors.muted}]}>{label}</Text><TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={colors.muted} keyboardType={keyboardType} returnKeyType={returnKeyType} style={[styles.fieldInput,{color:colors.foreground,borderColor:colors.border,backgroundColor:colors.surface}]}/></View>}
-function ModalHeader({title,colors,close}:{title:string;colors:any;close:()=>void}){return <View style={styles.modalHeader}><Text style={[styles.modalTitle,{color:colors.foreground}]}>{title}</Text><Pressable onPress={close} style={[styles.close,{backgroundColor:colors.surface}]}><Text style={{fontSize:25,color:colors.muted}}>×</Text></Pressable></View>}
-function ProductRow({p,colors,onPress}:{p:LocalProduct;colors:any;onPress:()=>void}){return <Pressable onPress={onPress} style={[styles.productRow,{borderBottomColor:colors.border}]}><View style={{flex:1}}><Text style={[styles.rowTitle,{color:colors.foreground}]}>{p.name}</Text><Text style={[styles.rowSub,{color:colors.muted}]}>{money(p.salePrice)} • المتوفر {p.stock}</Text></View><Text style={[styles.lineTotal,{color:colors.primary}]}>إضافة</Text></Pressable>}
-function Pill({label,active,colors,onPress}:{label:string;active:boolean;colors:any;onPress:()=>void}){return <Pressable onPress={onPress} style={[styles.pill,{backgroundColor:active?colors.primary:colors.surface,borderColor:active?colors.primary:colors.border}]}><Text style={{color:active?"#fff":colors.foreground,fontWeight:"700"}}>{label}</Text></Pressable>}
-function Tab({icon,label,active,colors,onPress}:{icon:any;label:string;active:boolean;colors:any;onPress:()=>void}){return <Pressable onPress={onPress} style={styles.tab}><IconSymbol name={icon} size={20} color={active?colors.primary:colors.muted}/><Text style={{fontSize:11,fontWeight:active?"800":"600",color:active?colors.primary:colors.muted}}>{label}</Text></Pressable>}
-function Stat({title,value,colors}:{title:string;value:string;colors:any}){return <View style={[styles.stat,{backgroundColor:colors.surface,borderColor:colors.border}]}><Text style={[styles.statTitle,{color:colors.muted}]}>{title}</Text><Text style={[styles.statValue,{color:colors.primary}]}>{value}</Text></View>}
-function Action({title,icon,colors,onPress}:{title:string;icon:any;colors:any;onPress:()=>void}){return <Pressable onPress={onPress} style={[styles.action,{backgroundColor:colors.primary}]}><IconSymbol name={icon} size={22} color="#fff"/><Text style={styles.buttonText}>{title}</Text></Pressable>}
-function Empty({colors,text}:{colors:any;text:string}){return <View style={styles.empty}><Text style={{color:colors.muted}}>{text}</Text></View>}
+function InvoiceView({ onBack, products, customers, colors, storeName }: any) {
+  const [lines, setLines] = useState<any[]>([]);
+  const [customer, setCustomer] = useState<any>(null);
+  const [notes, setNotes] = useState("");
+  const [editId, setEditId] = useState<number | null>(null);
 
-const styles=StyleSheet.create({loading:{flex:1,alignItems:"center",justifyContent:"center"},page:{flex:1},header:{flexDirection:"row-reverse",justifyContent:"space-between",alignItems:"center",paddingVertical:8},brand:{fontSize:18,fontWeight:"800",textAlign:"right"},title:{fontSize:29,fontWeight:"900",textAlign:"right",marginTop:2},logo:{width:58,height:58,borderRadius:20,alignItems:"center",justifyContent:"center"},scroll:{paddingBottom:20},cards:{flexDirection:"row-reverse",flexWrap:"wrap",gap:10,marginTop:10},stat:{width:"48%",minHeight:82,borderRadius:18,borderWidth:1,padding:14,justifyContent:"center"},statTitle:{fontSize:12,fontWeight:"700",textAlign:"right"},statValue:{fontSize:19,fontWeight:"900",textAlign:"right",marginTop:4},actionGrid:{flexDirection:"row-reverse",flexWrap:"wrap",gap:10,marginTop:14},action:{width:"48%",minHeight:58,borderRadius:18,alignItems:"center",justifyContent:"center",gap:5},buttonText:{color:"#fff",fontWeight:"900",fontSize:15},notice:{borderWidth:1,borderRadius:18,padding:16,marginTop:14},sectionTitle:{fontSize:19,fontWeight:"900",marginBottom:10,textAlign:"right"},rowBetween:{flexDirection:"row-reverse",justifyContent:"space-between",alignItems:"center",gap:10},card:{borderWidth:1,borderRadius:18,padding:14,marginBottom:10},rowTitle:{fontSize:16,fontWeight:"800",textAlign:"right"},rowSub:{fontSize:12,marginTop:4,textAlign:"right"},lineTotal:{fontSize:15,fontWeight:"900"},smallButton:{borderRadius:14,paddingHorizontal:14,paddingVertical:10},searchBox:{height:52,borderWidth:1,borderRadius:18,flexDirection:"row-reverse",alignItems:"center",paddingHorizontal:14,marginVertical:12},input:{flex:1,fontSize:16,textAlign:"right",marginHorizontal:8},stock:{fontSize:15,fontWeight:"900"},empty:{alignItems:"center",padding:35},primaryButton:{minHeight:52,borderRadius:17,alignItems:"center",justifyContent:"center",marginTop:10,paddingHorizontal:15},tabBar:{position:"absolute",bottom:0,left:0,right:0,height:72,borderTopWidth:1,flexDirection:"row-reverse",justifyContent:"space-around",alignItems:"center",borderRadius:20},tab:{alignItems:"center",justifyContent:"center",gap:3,minWidth:55},modalRoot:{flex:1},backdrop:{flex:1,backgroundColor:"rgba(0,0,0,.45)",justifyContent:"flex-end"},formModal:{height:"82%",borderTopLeftRadius:28,borderTopRightRadius:28,padding:16},invoiceModal:{height:"90%",borderTopLeftRadius:28,borderTopRightRadius:28,padding:16},modalHeader:{height:58,flexDirection:"row-reverse",alignItems:"center",justifyContent:"space-between"},modalTitle:{fontSize:22,fontWeight:"900",textAlign:"right",flex:1},close:{width:48,height:48,borderRadius:18,alignItems:"center",justifyContent:"center"},modalScroll:{paddingBottom:20},field:{marginBottom:13},label:{fontSize:13,fontWeight:"700",marginBottom:6,textAlign:"right"},fieldInput:{height:54,borderWidth:1,borderRadius:16,paddingHorizontal:14,fontSize:17,textAlign:"right"},two:{flexDirection:"row-reverse",gap:10},twoField:{flex:1},pills:{flexDirection:"row-reverse",gap:8,paddingVertical:7},pill:{borderWidth:1,borderRadius:14,paddingHorizontal:14,paddingVertical:10},productRow:{minHeight:62,borderBottomWidth:1,flexDirection:"row-reverse",alignItems:"center",paddingVertical:8},invoiceLine:{flexDirection:"row-reverse",alignItems:"center",paddingVertical:10,borderBottomWidth:1},total:{flexDirection:"row-reverse",justifyContent:"space-between",alignItems:"center",paddingVertical:15},totalLabel:{fontSize:15,fontWeight:"700"},totalValue:{fontSize:22,fontWeight:"900"}
+  const total = useMemo(() => lines.reduce((s, x) => s + Number(x.unitPrice || 0) * Number(x.quantity || 0), 0), [lines]);
+
+  const createSale = trpc.sales.create.useMutation({
+    onSuccess: async (d) => {
+      // after saving, we could refresh queries if needed. keeping simple for now.
+      console.log('sale saved', d);
+    },
+    onError: (err) => {
+      console.warn('sale save failed', err);
+    }
+  });
+
+  const updateSale = trpc.sales.update.useMutation({
+    onSuccess: async (d) => {
+      console.log('sale updated', d);
+    },
+    onError: (err) => console.warn('sale update failed', err),
+  });
+
+  const deleteSale = trpc.sales.delete.useMutation({
+    onSuccess: async () => {
+      console.log('sale deleted');
+    },
+    onError: (err) => console.warn('sale delete failed', err),
+  });
+
+  function addLine() {
+    setLines((old) => [...old, { description: "", quantity: 1, unitPrice: 0 }]);
+  }
+
+  async function saveInvoice() {
+    if (!lines.length) return Alert.alert("تنبيه", "أضف بنداً واحداً على الأقل.");
+    const payload = lines.map((l) => ({ name: l.description || "-", quantity: Number(l.quantity) || 0, unitPrice: Number(l.unitPrice) || 0 }));
+    try {
+      // Persist invoice to backend first
+      if (editId) {
+        await updateSale.mutateAsync({ id: editId, items: payload, notes: notes || undefined });
+      } else {
+        await createSale.mutateAsync({ items: payload, notes: notes || undefined, customerId: undefined });
+      }
+
+      // Then generate & share PDF
+      const uri = await shareInvoicePdf(payload, undefined, undefined, "80mm", { storeName });
+      if (uri) {
+        Alert.alert("تم", "تم توليد ومشاركة الفاتورة.");
+        return;
+      }
+
+      // Fallback: direct print
+      await printReceipt(payload, undefined, "80mm", { storeName });
+      Alert.alert("تم", "تم الطباعة.");
+    } catch (e) {
+      console.warn(e);
+      // Fallback attempt to still create PDF/print even if backend failed
+      try {
+        const uri = await shareInvoicePdf(payload, undefined, undefined, "80mm", { storeName });
+        if (uri) {
+          Alert.alert("تم", "تم توليد ومشاركة الفاتورة (بدون حفظ على الخادم).");
+          return;
+        }
+        await printReceipt(payload, undefined, "80mm", { storeName });
+        Alert.alert("تم", "تم الطباعة (بدون حفظ على الخادم).");
+      } catch (err) {
+        console.warn(err);
+        Alert.alert("خطأ", "تعذر توليد الفاتورة أو مشاركتها.");
+      }
+    }
+  }
+
+  async function removeInvoice() {
+    if (!editId) return;
+    Alert.alert("حذف الفاتورة", "هل أنت متأكد؟", [
+      { text: "إلغاء", style: "cancel" },
+      {
+        text: "حذف",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteSale.mutateAsync({ id: editId });
+            Alert.alert("تم", "تم حذف الفاتورة.");
+            onBack();
+          } catch (err) {
+            console.warn(err);
+            Alert.alert("خطأ", "تعذر حذف الفاتورة.");
+          }
+        },
+      },
+    ]);
+  }
+
+  return (
+    <View>
+      <View style={{ flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <View>
+          <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800" }}>فاتورة جديدة</Text>
+          <Text style={{ color: colors.muted }}>أنشئ فاتورة وشارِك أو اطبعها فوراً</Text>
+        </View>
+        <Pressable onPress={onBack} style={{ padding: 8 }}>
+          <IconSymbol name="xmark" size={20} color={colors.muted} />
+        </Pressable>
+      </View>
+
+      <Card>
+        <Field label="ملاحظات" value={notes} onChangeText={setNotes} placeholder="ملاحظات داخل الفاتورة" />
+
+        {lines.map((l, idx) => (
+          <View key={idx} style={{ marginBottom: 8 }}>
+            <TextInput
+              value={l.description}
+              onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, description: t } : x))))}
+              placeholder="وصف البند"
+              style={{ borderWidth: 1, borderColor: colors.border, padding: 8, borderRadius: 8, marginBottom: 6, backgroundColor: colors.surface }}
+            />
+            <View style={{ flexDirection: "row-reverse", gap: 8 }}>
+              <TextInput
+                value={String(l.quantity)}
+                onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, quantity: Number(t) || 0 } : x))))}
+                keyboardType="number-pad"
+                style={{ flex: 1, borderWidth: 1, borderColor: colors.border, padding: 8, borderRadius: 8, backgroundColor: colors.surface }}
+              />
+              <TextInput
+                value={String(l.unitPrice)}
+                onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, unitPrice: Number(t) || 0 } : x))))}
+                keyboardType="decimal-pad"
+                style={{ flex: 1, borderWidth: 1, borderColor: colors.border, padding: 8, borderRadius: 8, backgroundColor: colors.surface }}
+              />
+            </View>
+          </View>
+        ))}
+
+
+        <View style={{ flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
+          <Pressable onPress={addLine} style={{ padding: 10 }}>
+            <Text style={{ color: colors.primary, fontWeight: "700" }}>أضف بند</Text>
+          </Pressable>
+          <View style={{ alignItems: "flex-end" }}>
+            <Text style={{ color: colors.muted }}>الإجمالي</Text>
+            <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800" }}>{money(total)}</Text>
+          </View>
+        </View>
+
+        <View style={{ marginTop: 12, flexDirection: "row-reverse", gap: 8 }}>
+          <Pressable onPress={saveInvoice} style={{ flex: 1, padding: 12, borderRadius: 10, backgroundColor: colors.primary, alignItems: "center" }}>
+            <Text style={{ color: "#fff", fontWeight: "800" }}>طباعة/مشاركة</Text>
+          </Pressable>
+          <Pressable onPress={() => Alert.alert("حفظ مؤقت", "تم حفظ الفاتورة محليًا (محاكاة)")} style={{ flex: 1, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: colors.border, alignItems: "center" }}>
+            <Text style={{ color: colors.foreground, fontWeight: "700" }}>حفظ</Text>
+          </Pressable>
+        </View>
+
+        {editId ? (
+          <View style={{ marginTop: 10 }}>
+            <Pressable onPress={removeInvoice} style={{ padding: 12, borderRadius: 10, backgroundColor: "#ff3b30", alignItems: "center" }}>
+              <Text style={{ color: "#fff", fontWeight: "800" }}>حذف الفاتورة</Text>
+            </Pressable>
+          </View>
+        ) : null}
+      </Card>
+
+      <View style={{ height: 90 }} />
+    </View>
+  );
+}
+
+function StockView({ products, onBack, colors }: any) {
+  return (
+    <View>
+      <View style={{ flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800" }}>الأصناف والمخزون</Text>
+        <Pressable onPress={onBack} style={{ padding: 8 }}>
+          <IconSymbol name="xmark" size={20} color={colors.muted} />
+        </Pressable>
+      </View>
+
+      <Card>
+        {products.slice(0, 20).map((p: any) => (
+          <View key={p.id} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <Text style={{ color: colors.foreground }}>{p.name}</Text>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>الكمية: {p.stock}</Text>
+          </View>
+        ))}
+      </Card>
+
+      <View style={{ height: 90 }} />
+    </View>
+  );
+}
+
+function CustomersView({ customers, onBack, colors }: any) {
+  return (
+    <View>
+      <View style={{ flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800" }}>الحسابات</Text>
+        <Pressable onPress={onBack} style={{ padding: 8 }}>
+          <IconSymbol name="xmark" size={20} color={colors.muted} />
+        </Pressable>
+      </View>
+
+      <Card>
+        {customers.slice(0, 20).map((c: any) => (
+          <View key={c.id} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <Text style={{ color: colors.foreground }}>{c.name}</Text>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>{c.phone || "-"}</Text>
+          </View>
+        ))}
+      </Card>
+
+      <View style={{ height: 90 }} />
+    </View>
+  );
+}
+
+function ReportsView({ report, onBack, colors }: any) {
+  return (
+    <View>
+      <View style={{ flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800" }}>التقارير</Text>
+        <Pressable onPress={onBack} style={{ padding: 8 }}>
+          <IconSymbol name="xmark" size={20} color={colors.muted} />
+        </Pressable>
+      </View>
+
+      <Card>
+        <Text style={{ color: colors.foreground, fontWeight: "700" }}>ملخّص اليوم</Text>
+        <View style={{ marginTop: 8 }}>
+          <Text style={{ color: colors.muted }}>إجمالي مبيعات: {money(report.totalSales || 0)}</Text>
+          <Text style={{ color: colors.muted }}>عدد الفواتير: {report.invoicesCount || 0}</Text>
+        </View>
+      </Card>
+
+      <View style={{ height: 90 }} />
+    </View>
+  );
+}
+
+function SettingsView({ colors, onBack }: any) {
+  const [storeName, setStoreName] = useState("");
+  const settingsQ = trpc.settings.get.useQuery();
+  const update = trpc.settings.update.useMutation({ onSuccess: () => settingsQ.refetch() });
+
+  React.useEffect(() => {
+    if (settingsQ.data) {
+      setStoreName(settingsQ.data.storeName || "");
+    }
+  }, [settingsQ.data]);
+
+  return (
+    <View>
+      <View style={{ flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: "800" }}>الإعدادات</Text>
+        <Pressable onPress={onBack} style={{ padding: 8 }}>
+          <IconSymbol name="xmark" size={20} color={colors.muted} />
+        </Pressable>
+      </View>
+
+      <Card>
+        <Field label="اسم المتجر" value={storeName} onChangeText={setStoreName} placeholder="اسم المتجر" />
+        <Pressable
+          onPress={() => update.mutate({ storeName: storeName.trim() || undefined })}
+          style={{ padding: 12, backgroundColor: colors.primary, borderRadius: 10, alignItems: "center", marginTop: 8 }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "800" }}>حفظ</Text>
+        </Pressable>
+      </Card>
+
+      <View style={{ height: 90 }} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  page: { flex: 1 },
+  scroll: { paddingBottom: 20 },
+  header: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 15 },
+  brand: { fontSize: 13, fontWeight: "800" },
+  title: { fontSize: 18, fontWeight: "700" },
 });

@@ -22,6 +22,15 @@ module.exports = {
   theme: {
     extend: {
       colors: tailwindColors,
+      fontFamily: {
+        cairo: ["Cairo_400Regular", "Cairo_700Bold", "system-ui"],
+      },
+      borderRadius: {
+        xl: "12px",
+      },
+      boxShadow: {
+        soft: "0 6px 14px rgba(23, 34, 29, 0.08)",
+      },
     },
   },
   plugins: [
