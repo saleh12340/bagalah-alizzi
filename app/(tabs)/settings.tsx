@@ -47,7 +47,7 @@ export default function SettingsScreen() {
   const [taxEnabled, setTaxEnabled] = useState(false);
   const [taxRate, setTaxRate] = useState("0");
   const [copies, setCopies] = useState("1");
-  const [showLogo, setShowLogo] = useState(true);
+
   const [printers, setPrinters] = useState<ThermalPrinterDevice[]>([]);
   const [savedPrinter, setSavedPrinter] = useState<ThermalPrinterDevice | null>(null);
   const [scanning, setScanning] = useState(false);
