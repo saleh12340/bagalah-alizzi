@@ -72,9 +72,9 @@
     "tailwind-merge": "^2.6.0",
     "zod": "^4.2.1",
     "@expo-google-fonts/cairo": "^0.2.0",
-    "expo-file-system": "~15.0.7",
+    "expo-file-system": "~19.0.24",
     "react-native-view-shot": "^3.1.2",
-    "react-native-tcp-socket": "^5.7.1",
+    "react-native-tcp-socket": "^6.4.3",
     "react-native-ble-plx": "^2.0.2"
   },
   "devDependencies": {
