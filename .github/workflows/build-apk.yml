@@ -37,10 +37,10 @@ jobs:
           java-version: '17'
           distribution: temurin
           cache: gradle
-      - name: Prepare Android SDK
-        run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
       - name: Build Android APK
         working-directory: android
         run: |
