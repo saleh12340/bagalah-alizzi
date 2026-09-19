@@ -1,6 +1,7 @@
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { Alert, Linking, Platform } from "react-native";
+import { getSavedThermalPrinter, printThermalReceipt } from "@/lib/thermal-printer";
 
 export type InvoicePdfLine = { name: string; quantity: number; unitPrice: number };
 const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;" }[c] ?? c));
@@ -91,6 +92,21 @@ export async function printReceipt(
     return false;
   }
   await Print.printAsync({ html: buildInvoiceHtml(lines, customerName, width, options), width: width === "58mm" ? 219 : 302, height: 1200 });
+export async function printReceipt(lines: InvoicePdfLine[], customerName?: string, width: "58mm" | "80mm" = "80mm") {
+  if (Platform.OS === "web") { Alert.alert("غير متاح", "الطباعة متاحة داخل تطبيق Android."); return false; }
+  if (Platform.OS === "android") {
+    const saved = await getSavedThermalPrinter();
+    if (saved) {
+      try {
+        await printThermalReceipt({ lines, customerName, width });
+        return true;
+      } catch (error: any) {
+        Alert.alert("تعذر الطباعة الحرارية", `${error?.message || "تحقق من اتصال الطابعة."}\n\nيمكنك استخدام طباعة النظام بدلًا من ذلك.`);
+        return false;
+      }
+    }
+  }
+  await Print.printAsync({ html: buildInvoiceHtml(lines, customerName, width), width: width === "58mm" ? 219 : 302, height: 1200 });
   return true;
 }
 
