@@ -58,7 +58,7 @@ export default function SettingsScreen() {
 
   useEffect(() => { if (!data) return; setStoreName(data.storeName); setPhone(data.phone ?? ""); setAddress(data.address ?? ""); setCurrency(data.currency); setPaper(data.receiptWidth); }, [data]);
   useEffect(() => { getSavedThermalPrinter().then(setSavedPrinter).catch(() => undefined); }, []);
-  const save = () => update.mutate({ storeName: storeName.trim(), phone: phone.trim() || undefined, address: address.trim() || undefined, currency: currency.trim() || "ر.س", receiptWidth: paper });
+  const save = () => update.mutate({ storeName: storeName.trim() || "بقالة العزي للمواد الغذائية", phone: phone.trim() || undefined, address: address.trim() || undefined, currency: currency.trim() || "ر.س", receiptWidth: paper, autoPrint, printCopies: Math.max(1, Number(copies) || 1), showLogoOnReceipt: showLogo, showUnitPriceOnReceipt: showUnitPrice, lowStockAlerts });
 
   const scan = async () => {
     if (Platform.OS !== "android") { Alert.alert("Android فقط", "الطباعة الحرارية عبر Bluetooth متاحة في إصدار Android."); return; }
@@ -174,6 +174,7 @@ export default function SettingsScreen() {
 
 function Section({ title, subtitle, icon, colors, children }: any) { return <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={styles.sectionHead}><View style={[styles.sectionIcon, { backgroundColor: colors.primary + "18" }]}><IconSymbol name={icon} size={19} color={colors.primary} /></View><View style={{ flex: 1 }}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>{title}</Text><Text style={[styles.sectionSub, { color: colors.muted }]}>{subtitle}</Text></View></View>{children}</View>; }
 function Field({ label, colors, ...props }: any) { return <View style={styles.field}><Text style={[styles.label, { color: colors.muted }]}>{label}</Text><TextInput {...props} placeholderTextColor={colors.muted} style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]} /> </View>; }
+function Row({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) { return <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 50 }}><Text style={{ flex: 1, textAlign: "right" }}>{label}</Text><Switch value={value} onValueChange={onChange} /></View>; }
 function SettingRow({ title, description, colors, children }: any) { return <View style={[styles.settingRow, { borderTopColor: colors.border }]}><View style={styles.rowText}><Text style={[styles.rowTitle, { color: colors.foreground }]}>{title}</Text><Text style={[styles.rowSub, { color: colors.muted }]}>{description}</Text></View>{children}</View>; }
 function ActionRow({ title, subtitle, icon, colors, onPress }: any) { return <Pressable onPress={onPress} style={[styles.actionRow, { borderTopColor: colors.border }]}><View style={[styles.actionIcon, { backgroundColor: colors.background }]}><IconSymbol name={icon} size={18} color={colors.primary} /></View><View style={styles.rowText}><Text style={[styles.rowTitle, { color: colors.foreground }]}>{title}</Text><Text style={[styles.rowSub, { color: colors.muted }]}>{subtitle}</Text></View><IconSymbol name="chevron.left" size={18} color={colors.muted} /></Pressable>; }
 const styles = StyleSheet.create({
