@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Alert, BackHandler, GestureHandlerRootView, I18nManager, Platform } from "react-native";
 import { Alert, BackHandler } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Platform } from "react-native";
@@ -13,6 +14,9 @@ import { SafeAreaFrameContext, SafeAreaInsetsContext, SafeAreaProvider, initialW
 import type { EdgeInsets, Metrics, Rect } from "react-native-safe-area-context";
 import { trpc, createTRPCClient } from "@/lib/trpc";
 import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-runtime";
+
+// load Cairo font
+import { useFonts, Cairo_400Regular, Cairo_700Bold } from "@expo-google-fonts/cairo";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -25,6 +29,38 @@ export default function RootLayout() {
   const [insets, setInsets] = useState<EdgeInsets>(initialInsets);
   const [frame, setFrame] = useState<Rect>(initialFrame);
 
+  // Ask for confirmation before closing the Android app when the user is at the root screen.
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+
+    const onBackPress = () => {
+      // If there is a previous route, let Expo Router handle normal navigation first.
+      // Note: router isn't available in this file in all stacks; keep behavior generic.
+      Alert.alert(
+        "تأكيد الخروج",
+        "هل تريد الخروج من البرنامج؟",
+        [
+          {
+            text: "لا",
+            style: "cancel",
+          },
+          {
+            text: "نعم، خروج",
+            style: "destructive",
+            onPress: () => BackHandler.exitApp(),
+          },
+        ],
+        { cancelable: true },
+      );
+
+      return true;
+    };
+
+    const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => subscription.remove();
+  }, []);
+
+  // Initialize Manus runtime for cookie injection from parent container
   useEffect(() => {
     if (Platform.OS !== "android") return;
     const onBackPress = () => {
@@ -54,10 +90,33 @@ export default function RootLayout() {
     return { ...metrics, insets: { ...metrics.insets, top: Math.max(metrics.insets.top, 16), bottom: Math.max(metrics.insets.bottom, 12) } };
   }, [initialInsets, initialFrame]);
 
+  // load font (Cairo) and ensure RTL
+  const [fontsLoaded] = useFonts({ Cairo_400Regular, Cairo_700Bold });
+
+  useEffect(() => {
+    // Force RTL for Arabic app; this may require app reload to fully apply.
+    try {
+      if (!I18nManager.isRTL) {
+        I18nManager.allowRTL(true);
+        I18nManager.forceRTL(true);
+      }
+    } catch (e) {
+      // ignore if not supported at runtime
+      console.warn("RTL force failed", e);
+    }
+  }, []);
+
+  if (!fontsLoaded) {
+    // simple early return; splash screen handled elsewhere
+    return null;
+  }
+
   const content = (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
         <QueryClientProvider client={queryClient}>
+          {/* Default to hiding native headers so raw route segments don't appear (e.g. "(tabs)", "products/[id]"). */}
+          {/* If a screen needs the native header, explicitly enable it and set a human title via Stack.Screen options. */}
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="oauth/callback" />
