@@ -81,17 +81,6 @@ export async function createInvoicePdf(
   return result.uri;
 }
 
-export async function printReceipt(
-  lines: InvoicePdfLine[],
-  customerName?: string,
-  width: "58mm" | "80mm" = "80mm",
-  options?: { storeName?: string; phone?: string; address?: string; logoDataUrl?: string },
-) {
-  if (Platform.OS === "web") {
-    Alert.alert("غير متاح", "الطباعة متاحة داخل تطبيق Android/iOS.");
-    return false;
-  }
-  await Print.printAsync({ html: buildInvoiceHtml(lines, customerName, width, options), width: width === "58mm" ? 219 : 302, height: 1200 });
 export async function printReceipt(lines: InvoicePdfLine[], customerName?: string, width: "58mm" | "80mm" = "80mm") {
   if (Platform.OS === "web") { Alert.alert("غير متاح", "الطباعة متاحة داخل تطبيق Android."); return false; }
   if (Platform.OS === "android") {
