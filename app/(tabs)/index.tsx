@@ -289,20 +289,20 @@ function InvoiceView({ onBack, products, customers, colors, storeName }: any) {
           <View key={idx} style={{ marginBottom: 8 }}>
             <TextInput
               value={l.description}
-              onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, description: t } : x))))
+              onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, description: t } : x)))}
               placeholder="وصف البند"
               style={{ borderWidth: 1, borderColor: colors.border, padding: 8, borderRadius: 8, marginBottom: 6, backgroundColor: colors.surface }}
             />
             <View style={{ flexDirection: "row-reverse", gap: 8 }}>
               <TextInput
                 value={String(l.quantity)}
-                onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, quantity: Number(t) || 0 } : x))))
+                onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, quantity: Number(t) || 0 } : x)))}
                 keyboardType="number-pad"
                 style={{ flex: 1, borderWidth: 1, borderColor: colors.border, padding: 8, borderRadius: 8, backgroundColor: colors.surface }}
               />
               <TextInput
                 value={String(l.unitPrice)}
-                onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, unitPrice: Number(t) || 0 } : x))))
+                onChangeText={(t) => setLines((s) => s.map((x, i) => (i === idx ? { ...x, unitPrice: Number(t) || 0 } : x)))}
                 keyboardType="decimal-pad"
                 style={{ flex: 1, borderWidth: 1, borderColor: colors.border, padding: 8, borderRadius: 8, backgroundColor: colors.surface }}
               />
