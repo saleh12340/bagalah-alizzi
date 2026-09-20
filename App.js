@@ -85,6 +85,9 @@ export default function App() {
         ref={webRef}
         source={{ uri }}
         originWhitelist={["*"]}
+        allowFileAccess
+        allowFileAccessFromFileURLs
+        allowUniversalAccessFromFileURLs
         javaScriptEnabled
         domStorageEnabled
         cacheEnabled
