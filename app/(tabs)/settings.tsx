@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type ComponentProps } from "react";
+import { useEffect, useState, type ComponentProps } from "react";
 import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ScreenContainer } from "@/components/screen-container";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { useColors } from "@/hooks/use-colors";
@@ -47,6 +48,11 @@ export default function SettingsScreen() {
   const [taxEnabled, setTaxEnabled] = useState(false);
   const [taxRate, setTaxRate] = useState("0");
   const [copies, setCopies] = useState("1");
+  const [appLock, setAppLock] = useState(false);
+  const [categories, setCategories] = useState<string[]>(["مواد غذائية", "مشروبات", "منظفات"]);
+  const [groups, setGroups] = useState<string[]>(["أساسي", "جملة"]);
+  const [units, setUnits] = useState<string[]>(["حبة", "كرتون", "كيلو", "لتر"]);
+  const [newListItem, setNewListItem] = useState("");
 
   const [printers, setPrinters] = useState<ThermalPrinterDevice[]>([]);
   const [savedPrinter, setSavedPrinter] = useState<ThermalPrinterDevice | null>(null);
@@ -57,7 +63,9 @@ export default function SettingsScreen() {
   const menuTitle = menuItems.find((m) => m.key === activeMenu)?.title ?? "الإعدادات";
 
   useEffect(() => { if (!data) return; setStoreName(data.storeName); setPhone(data.phone ?? ""); setAddress(data.address ?? ""); setCurrency(data.currency); setPaper(data.receiptWidth); }, [data]);
-  useEffect(() => { getSavedThermalPrinter().then(setSavedPrinter).catch(() => undefined); }, []);
+  useEffect(() => { getSavedThermalPrinter().then(setSavedPrinter).catch(() => undefined); AsyncStorage.multiGet(["azizi.categories","azizi.groups","azizi.units","azizi.appLock"]).then(items => { const v=Object.fromEntries(items); if(v["azizi.categories"]) setCategories(JSON.parse(v["azizi.categories"])); if(v["azizi.groups"]) setGroups(JSON.parse(v["azizi.groups"])); if(v["azizi.units"]) setUnits(JSON.parse(v["azizi.units"])); if(v["azizi.appLock"]) setAppLock(v["azizi.appLock"]==="1"); }).catch(()=>undefined); }, []);
+  const saveLocalOption = async (key:string, value:any) => { await AsyncStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value)); };
+  const addListItem = async (kind:"categories"|"groups"|"units") => { const value=newListItem.trim(); if(!value) return; const current=kind==="categories"?categories:kind==="groups"?groups:units; if(current.includes(value)){Alert.alert("تنبيه","هذا العنصر موجود بالفعل.");return;} const next=[...current,value]; if(kind==="categories")setCategories(next); else if(kind==="groups")setGroups(next); else setUnits(next); await saveLocalOption("azizi."+kind,next); setNewListItem(""); };
   const save = () => update.mutate({ storeName: storeName.trim() || "بقالة العزي للمواد الغذائية", phone: phone.trim() || undefined, address: address.trim() || undefined, currency: currency.trim() || "ر.س", receiptWidth: paper, autoPrint, printCopies: Math.max(1, Number(copies) || 1), showLogoOnReceipt: showLogo, showUnitPriceOnReceipt: showUnitPrice, lowStockAlerts });
 
   const scan = async () => {
@@ -100,7 +108,7 @@ export default function SettingsScreen() {
             <Field label="رقم الهاتف" value={phone} onChangeText={setPhone} keyboardType="phone-pad" colors={colors} />
             <Field label="العنوان" value={address} onChangeText={setAddress} colors={colors} />
             <Field label="العملة" value={currency} onChangeText={setCurrency} colors={colors} />
-            <Pressable onPress={() => Alert.alert("الشعار", "سيتم ربط اختيار صورة الشعار في خطوة لاحقة.")} style={[styles.action, { backgroundColor: colors.background, borderColor: colors.border }]}><IconSymbol name="photo" size={20} color={colors.primary} /><Text style={[styles.actionText, { color: colors.foreground }]}>تعديل شعار المحل</Text><IconSymbol name="chevron.left" size={18} color={colors.muted} /></Pressable>
+            <Pressable onPress={() => setActiveMenu("profile")} style={[styles.action, { backgroundColor: colors.background, borderColor: colors.border }]}><IconSymbol name="photo" size={20} color={colors.primary} /><Text style={[styles.actionText, { color: colors.foreground }]}>بيانات وشعار المحل</Text><IconSymbol name="chevron.left" size={18} color={colors.muted} /></Pressable>
           </Section>
 
           <Section title="الطابعة الحرارية Bluetooth" subtitle="اختيار طابعة ESC/POS وطباعة الفواتير مباشرة من Android" icon="printer.fill" colors={colors}>
@@ -127,6 +135,11 @@ export default function SettingsScreen() {
             <SettingRow title="إظهار الشعار" description="إظهار شعار المحل أعلى الإيصال" colors={colors}><Switch value={showLogo} onValueChange={setShowLogo} /></SettingRow>
             <SettingRow title="إظهار سعر الوحدة" description="عرض السعر بجانب الصنف في الإيصال" colors={colors}><Switch value={showUnitPrice} onValueChange={setShowUnitPrice} /></SettingRow>
             <Field label="عدد نسخ الإيصال" value={copies} onChangeText={setCopies} keyboardType="number-pad" colors={colors} />
+          </Section>
+
+          <Section title="الإعدادات المتقدمة" subtitle="خيارات البرنامج التي كانت تظهر كخيارات مؤجلة أصبحت قابلة للاستخدام" icon="slider.horizontal.3" colors={colors}>
+            <Text style={[styles.hint, { color: colors.muted }]}>اختر أي إعداد لفتحه وتعديله. الإعدادات المحلية مثل التصنيفات والوحدات تحفظ على هذا الجهاز.</Text>
+            {menuItems.map(item => <Pressable key={item.key} onPress={() => setActiveMenu(item.key)} style={[styles.menuCard,{borderColor:colors.border,backgroundColor:colors.background}]}><View style={[styles.menuIcon,{backgroundColor:colors.primary+"18"}]}><IconSymbol name={item.icon as IconName} size={18} color={colors.primary}/></View><View style={styles.rowText}><Text style={[styles.rowTitle,{color:colors.foreground}]}>{item.title}</Text><Text style={[styles.rowSub,{color:colors.muted}]}>{item.description || "فتح الإعداد وتعديله"}</Text></View><IconSymbol name="chevron.left" size={17} color={colors.muted}/></Pressable>)}
           </Section>
 
       </ScrollView>
@@ -160,6 +173,14 @@ export default function SettingsScreen() {
               {activeMenu === "backup" && <Text style={[styles.help, { color: colors.muted }]}>البيانات المحلية تحفظ على الجهاز. لن يتم استبدالها تلقائيًا. استخدم النسخ الاحتياطي قبل إعادة ضبط البيانات.</Text>}
               {activeMenu === "notifications" && <><Row label="الإشعارات" value={notifications} onChange={setNotifications} /><Row label="تنبيه المخزون المنخفض" value={lowStockAlerts} onChange={setLowStockAlerts} /></>}
               {activeMenu === "tax" && <><Row label="تفعيل الضريبة" value={taxEnabled} onChange={setTaxEnabled} /><Text style={[styles.label, { color: colors.foreground }]}>نسبة الضريبة</Text><TextInput value={taxRate} onChangeText={setTaxRate} keyboardType="decimal-pad" style={[styles.input, { borderColor: colors.border, color: colors.foreground }]} /></>}
+              {activeMenu === "security" && <><Row label="قفل التطبيق" value={appLock} onChange={async v=>{setAppLock(v);await saveLocalOption("azizi.appLock",v?"1":"0");}} /><Text style={[styles.help,{color:colors.muted}]}>عند تفعيل القفل سيُحفظ الاختيار على الجهاز. شاشة رمز الدخول يمكن إضافتها لاحقًا عند الحاجة.</Text></>}
+              {activeMenu === "users" && <><Text style={[styles.help,{color:colors.muted}]}>إدارة المستخدمين مرتبطة حاليًا بحساب الجهاز. لا توجد صلاحيات متعددة مفعلة في النسخة المحلية، لذلك لن يظهر زر وهمي للتفعيل.</Text><Pressable onPress={()=>Alert.alert("المستخدم الحالي","المستخدم المحلي: مدير المتجر")} style={[styles.primaryAction,{backgroundColor:colors.primary}]}><Text style={styles.primaryActionText}>عرض المستخدم الحالي</Text></Pressable></>}
+              {activeMenu === "categories" && <><Text style={[styles.help,{color:colors.muted}]}>أضف تصنيفًا لاستخدامه في تنظيم الأصناف.</Text><TextInput value={newListItem} onChangeText={setNewListItem} placeholder="اسم التصنيف" placeholderTextColor={colors.muted} style={[styles.input,{borderColor:colors.border,color:colors.foreground}]} /><Pressable onPress={()=>addListItem("categories")} style={[styles.primaryAction,{backgroundColor:colors.primary}]}><Text style={styles.primaryActionText}>إضافة تصنيف</Text></Pressable>{categories.map(x=><Text key={x} style={[styles.listOption,{color:colors.foreground}]}>{x}</Text>)}</>}
+              {activeMenu === "groups" && <><Text style={[styles.help,{color:colors.muted}]}>أنشئ مجموعات للأصناف.</Text><TextInput value={newListItem} onChangeText={setNewListItem} placeholder="اسم المجموعة" placeholderTextColor={colors.muted} style={[styles.input,{borderColor:colors.border,color:colors.foreground}]} /><Pressable onPress={()=>addListItem("groups")} style={[styles.primaryAction,{backgroundColor:colors.primary}]}><Text style={styles.primaryActionText}>إضافة مجموعة</Text></Pressable>{groups.map(x=><Text key={x} style={[styles.listOption,{color:colors.foreground}]}>{x}</Text>)}</>}
+              {activeMenu === "units" && <><Text style={[styles.help,{color:colors.muted}]}>الوحدات المستخدمة عند إضافة الأصناف.</Text><TextInput value={newListItem} onChangeText={setNewListItem} placeholder="اسم الوحدة" placeholderTextColor={colors.muted} style={[styles.input,{borderColor:colors.border,color:colors.foreground}]} /><Pressable onPress={()=>addListItem("units")} style={[styles.primaryAction,{backgroundColor:colors.primary}]}><Text style={styles.primaryActionText}>إضافة وحدة</Text></Pressable>{units.map(x=><Text key={x} style={[styles.listOption,{color:colors.foreground}]}>{x}</Text>)}</>}
+              {activeMenu === "barcode" && <><Text style={[styles.help,{color:colors.muted}]}>إعداد باركود الأصناف أصبح مرتبطًا بالمخزون. افتح المخزون لإضافة الأصناف، ويمكن استخدام رقم الصنف كمعرف محلي.</Text><Pressable onPress={()=>{setActiveMenu(null);Alert.alert("المخزون","افتح تبويب المخزون لإدارة الأصناف.");}} style={[styles.primaryAction,{backgroundColor:colors.primary}]}><Text style={styles.primaryActionText}>فتح المخزون</Text></Pressable></>}
+              {activeMenu === "subscription" && <><Text style={[styles.help,{color:colors.muted}]}>هذه النسخة تعمل محليًا ولا توقف العمليات بعد عدد محدد من الفواتير. لا يوجد تفعيل وهمي مطلوب.</Text><Pressable onPress={()=>Alert.alert("حالة التطبيق","التطبيق المحلي متاح للاستخدام بدون عدّاد عمليات.")} style={[styles.primaryAction,{backgroundColor:colors.primary}]}><Text style={styles.primaryActionText}>فحص الحالة</Text></Pressable></>}
+              {activeMenu === "backup" && <><Text style={[styles.help,{color:colors.muted}]}>البيانات الأساسية محفوظة محليًا. يمكن استخدام خيارات مشاركة الفاتورة وكشف العميل حاليًا، أما النسخ والاستعادة الكاملة لملف قاعدة البيانات فتحتاج مسار ملفات مخصص.</Text><Pressable onPress={()=>Alert.alert("حفظ البيانات","لا يوجد حذف أو استبدال تلقائي للبيانات من هذه الشاشة.")} style={[styles.primaryAction,{backgroundColor:colors.primary}]}><Text style={styles.primaryActionText}>فحص حالة الحفظ</Text></Pressable></>}
               {activeMenu === "other" && <><Text style={[styles.label, { color: colors.foreground }]}>عدد نسخ الفاتورة</Text><TextInput value={copies} onChangeText={setCopies} keyboardType="number-pad" style={[styles.input, { borderColor: colors.border, color: colors.foreground }]} /></>}
               <View style={{ height: 20 }} />
               <Pressable onPress={save} disabled={update.isPending} style={[styles.saveSheet, { backgroundColor: colors.primary }]}><Text style={styles.saveText}>{update.isPending ? "جارٍ الحفظ..." : "حفظ"}</Text></Pressable>
