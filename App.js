@@ -1,0 +1,7 @@
+import React from "react";
+import {View,StyleSheet,Alert,Linking} from "react-native";
+import {WebView} from "react-native-webview";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
+import {Asset} from "expo-asset";
+export default function App(){const [uri,setUri]=React.useState(null);const ref=React.useRef(null);React.useEffect(()=>{Asset.fromModule(require("./web/index.html")).downloadAsync().then(a=>setUri(a.localUri||a.uri));},[]);async function msg(e){try{const m=JSON.parse(e.nativeEvent.data);if(m.type==="print")await Print.printAsync({html:m.html});else if(m.type==="pdf"){const f=await Print.printToFileAsync({html:m.html});if(await Sharing.isAvailableAsync())await Sharing.shareAsync(f.uri,{mimeType:"application/pdf"});}else if(m.type==="call")await Linking.openURL("tel:"+m.phone);else if(m.type==="wa")await Linking.openURL("https://wa.me/"+String(m.phone).replace(/\D/g,""));}catch(e){Alert.alert("تنبيه","تعذر تنفيذ العملية.");}}if(!uri)return <View style={s.blank}/>;return <WebView ref={ref} source={{uri}} originWhitelist={["*"]} allowFileAccess allowFileAccessFromFileURLs allowUniversalAccessFromFileURLs javaScriptEnabled domStorageEnabled cacheEnabled setSupportMultipleWindows={false} onMessage={msg} onContentProcessDidTerminate={()=>ref.current?.reload()} onRenderProcessGone={()=>ref.current?.reload()} style={s.web}/>};const s=StyleSheet.create({web:{flex:1},blank:{flex:1,backgroundColor:"#0b4d36"}});
