@@ -1,7 +1,7 @@
 module.exports={
   name:"بقالة العزي للمواد الغذائية",
   slug:"bagalah-alizzi",
-  version:"2.0.0",
+  version:"3.0.0",
   orientation:"portrait",
   icon:"./assets/images/icon.png",
   userInterfaceStyle:"light",
@@ -9,7 +9,7 @@ module.exports={
   primaryColor:"#126B4A",
   android:{
     package:"com.app.bagalahalizzi",
-    versionCode:200,
+    versionCode:300,
     adaptiveIcon:{
       backgroundColor:"#F4F7F4",
       foregroundImage:"./assets/images/android-icon-foreground.png",
