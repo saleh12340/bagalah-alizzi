@@ -3,8 +3,9 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 export type LocalProduct = { id:number; name:string; purchasePrice:number; salePrice:number; stock:number; minStock:number; unit:string };
 export type LocalCustomer = { id:number; name:string; phone:string; balance:number };
 export type LocalInvoice = { id:number; invoiceNo:string; date:string; customerId:number|null; customerName:string; total:number; paid:number; items:{productId:number;name:string;quantity:number;unitPrice:number}[] };
-export type LocalExpense = { id:number; category:string; amount:number; date:string };
-export type LocalState = { products:LocalProduct[]; customers:LocalCustomer[]; invoices:LocalInvoice[]; expenses:LocalExpense[]; nextId:number };
+export type LocalExpense = { id:number; category:string; amount:number; date:string; notes?:string };
+export type LocalPayment = { id:number; customerId:number; amount:number; date:string; notes?:string };
+export type LocalState = { products:LocalProduct[]; customers:LocalCustomer[]; invoices:LocalInvoice[]; expenses:LocalExpense[]; payments:LocalPayment[]; nextId:number };
 
 const KEY="bagalah_alizzi_local_v2";
 const BACKUP_KEY="bagalah_alizzi_local_v2_last_good";
@@ -16,12 +17,12 @@ const productSeeds=[
 const defaultProducts:LocalProduct[]=productSeeds.map(([name,purchasePrice,salePrice,stock,minStock,unit],i)=>({id:i+1,name,purchasePrice,salePrice,stock,minStock,unit}));
 const defaultCustomers:LocalCustomer[]=[{id:1,name:"أحمد محمد",phone:"777000001",balance:25},{id:2,name:"محمد علي",phone:"777000002",balance:40},{id:3,name:"عبدالله حسن",phone:"777000003",balance:15},{id:4,name:"سعيد صالح",phone:"777000004",balance:60}];
 
-export function seedState():LocalState{return{products:defaultProducts,customers:defaultCustomers,invoices:[],expenses:[],nextId:100};}
+export function seedState():LocalState{return{products:defaultProducts,customers:defaultCustomers,invoices:[],expenses:[],payments:[],nextId:100};}
 
 function validateState(value:unknown):value is LocalState{
   if(!value||typeof value!=="object") return false;
   const v=value as Partial<LocalState>;
-  return Array.isArray(v.products)&&Array.isArray(v.customers)&&Array.isArray(v.invoices)&&Array.isArray(v.expenses)&&typeof v.nextId==="number";
+  return Array.isArray(v.products)&&Array.isArray(v.customers)&&Array.isArray(v.invoices)&&Array.isArray(v.expenses)&&Array.isArray(v.payments ?? [])&&typeof v.nextId==="number";
 }
 
 export function getLocalStorageNotice(){return lastStorageNotice;}
@@ -41,6 +42,7 @@ export async function loadLocalState():Promise<LocalState>{
     try{
       const parsed:unknown=JSON.parse(raw);
       if(!validateState(parsed)) throw new Error("invalid");
+      if (!(parsed as any).payments) (parsed as any).payments = [];
       return parsed;
     }catch{
       // Never discard or silently replace unreadable user data.
