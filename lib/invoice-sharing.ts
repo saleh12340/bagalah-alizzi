@@ -1,6 +1,6 @@
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import { Alert, Linking, Platform } from "react-native";
+import { Alert, Platform } from "react-native";
 import { getSavedThermalPrinter, printThermalReceipt } from "@/lib/thermal-printer";
 
 export type InvoicePdfLine = { name: string; quantity: number; unitPrice: number };
@@ -77,12 +77,14 @@ export async function createInvoicePdf(
   }
 
   const html = buildInvoiceHtml(lines, customerName, width, options);
-  const result = await Print.printToFileAsync({ html, width: width === "58mm" ? 219 : 302, height: 1200 });
+  const height = Math.max(900, 520 + lines.length * 72);\n  const result = await Print.printToFileAsync({ html, width: width === "58mm" ? 219 : 302, height });
   return result.uri;
 }
 
 export async function printReceipt(lines: InvoicePdfLine[], customerName?: string, width: "58mm" | "80mm" = "80mm") {
   if (Platform.OS === "web") { Alert.alert("غير متاح", "الطباعة متاحة داخل تطبيق Android."); return false; }
+  const html = buildInvoiceHtml(lines, customerName, width);
+  const height = Math.max(900, 520 + lines.length * 72);
   if (Platform.OS === "android") {
     const saved = await getSavedThermalPrinter();
     if (saved) {
@@ -90,12 +92,12 @@ export async function printReceipt(lines: InvoicePdfLine[], customerName?: strin
         await printThermalReceipt({ lines, customerName, width });
         return true;
       } catch (error: any) {
-        Alert.alert("تعذر الطباعة الحرارية", `${error?.message || "تحقق من اتصال الطابعة."}\n\nيمكنك استخدام طباعة النظام بدلًا من ذلك.`);
-        return false;
+        // Do not lose the print operation: fall back to Android's system printer.
+        Alert.alert("تعذر الاتصال بالطابعة الحرارية", "سيتم فتح طباعة النظام بدلًا من إلغاء العملية.");
       }
     }
   }
-  await Print.printAsync({ html: buildInvoiceHtml(lines, customerName, width), width: width === "58mm" ? 219 : 302, height: 1200 });
+  await Print.printAsync({ html, width: width === "58mm" ? 219 : 302, height });
   return true;
 }
 
@@ -115,22 +117,9 @@ export async function shareInvoicePdf(
     await Sharing.shareAsync(uri, {
       mimeType: "application/pdf",
       UTI: "com.adobe.pdf",
-      dialogTitle: phone ? `إرسال الفاتورة إلى ${phone}` : "مشاركة الفاتورة PDF",
+      dialogTitle: phone ? `مشاركة كشف/فاتورة ${phone}` : "مشاركة الفاتورة PDF",
     });
-
-    // Optional: try opening WhatsApp chat if phone is provided (Android only)
-    if (phone && Platform.OS === "android") {
-      try {
-        const normalizedPhone = phone.replace(/[^0-9+]/g, "");
-        const text = encodeURIComponent(`فاتورة من ${options?.storeName || "بقالة العزي"} - الإجمالي ${lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0).toFixed(2)} ر.س`);
-        const whatsappUrl = `whatsapp://send?phone=${encodeURIComponent(normalizedPhone)}&text=${text}`;
-        const can = await Linking.canOpenURL(whatsappUrl);
-        if (can) await Linking.openURL(whatsappUrl);
-      } catch (e) {
-        // ignore whatsapp failures — sharing already happened
-      }
-    }
-
+    // The Android share sheet can send the PDF to WhatsApp, SMS, Bluetooth, Drive, etc.
     return uri;
   } catch (err) {
     console.warn("shareInvoicePdf failed", err);
