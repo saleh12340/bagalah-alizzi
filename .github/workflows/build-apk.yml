@@ -37,7 +37,7 @@ jobs:
         run: pnpm exec expo config --type public
 
       - name: Generate native Android
-        run: pnpm exec expo prebuild --platform android --non-interactive
+        run: CI=1 pnpm exec expo prebuild --platform android
 
       - name: Setup Java
         uses: actions/setup-java@v4
