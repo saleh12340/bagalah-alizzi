@@ -77,7 +77,8 @@ export async function createInvoicePdf(
   }
 
   const html = buildInvoiceHtml(lines, customerName, width, options);
-  const height = Math.max(900, 520 + lines.length * 72);\n  const result = await Print.printToFileAsync({ html, width: width === "58mm" ? 219 : 302, height });
+  const height = Math.max(900, 520 + lines.length * 72);
+  const result = await Print.printToFileAsync({ html, width: width === "58mm" ? 219 : 302, height });
   return result.uri;
 }
 
