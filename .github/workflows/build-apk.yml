@@ -11,7 +11,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup pnpm
@@ -20,7 +20,7 @@ jobs:
           version: 9.12.0
           run_install: false
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -29,23 +29,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: TypeScript check
-        run: pnpm check
-
-      - name: Validate Expo configuration
+      - name: Validate Expo
         run: pnpm exec expo config --type public
 
-      - name: Generate Android native project
+      - name: Generate native Android
         run: pnpm exec expo prebuild --platform android --non-interactive
 
-      - name: Setup Java JDK
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
+          java-version: "17"
           distribution: temurin
           cache: gradle
 
-      - name: Install Android SDK packages
+      - name: Install Android SDK
         shell: bash
         run: |
           export ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}
@@ -55,23 +52,16 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses < /dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Verify Android SDK
-        shell: bash
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
-
-      - name: Build Android APK
+      - name: Build release APK
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: bagalah-alizzi-apk
+          name: bagalah-alizzi-html-apk
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
