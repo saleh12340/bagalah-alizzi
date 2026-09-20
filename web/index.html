@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>بقالة العزي للمواد الغذائية</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;background:#f5f7f4;color:#18231e;font-family:Tahoma,Arial,sans-serif}body{padding-bottom:76px}.top{position:sticky;top:0;z-index:10;background:#0b4d36;color:#fff;padding:15px 16px}.brand{font-size:18px;font-weight:800}.sub{font-size:11px;opacity:.8;margin-top:3px}.wrap{max-width:900px;margin:auto;padding:14px}.page{display:none}.page.active{display:block}.hero{background:linear-gradient(135deg,#126b4a,#0b4d36);color:#fff;border-radius:20px;padding:20px;margin-bottom:14px}.hero h1{margin:0 0 7px;font-size:22px}.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.card{background:#fff;border:1px solid #dfe7e2;border-radius:16px;padding:14px;margin-bottom:10px;box-shadow:0 2px 8px #0000000b}.stat b{display:block;font-size:20px;margin-top:5px}.title{font-size:17px;font-weight:800;margin:18px 2px 10px}.field{margin-bottom:10px}.field label{display:block;font-size:12px;font-weight:700;color:#58665f;margin-bottom:5px}input,select,textarea{width:100%;border:1px solid #ccd8d1;border-radius:11px;background:#fff;padding:12px;outline:0;color:#18231e}input:focus,textarea:focus{border-color:#126b4a;box-shadow:0 0 0 2px #126b4a22}button{border:0;border-radius:11px;padding:11px 13px;font-weight:700}.primary{background:#126b4a;color:#fff}.gold{background:#d8a936;color:#17221d}.danger{background:#c83b3b;color:#fff}.muted{background:#e9efeb;color:#294036}.actions{display:flex;gap:7px;flex-wrap:wrap}.nav{position:fixed;bottom:0;left:0;right:0;height:68px;background:#fff;border-top:1px solid #dce5df;display:flex;z-index:30;padding:6px;gap:3px}.nav button{flex:1;background:transparent;color:#56655d;font-size:10px;padding:5px}.nav button.active{background:#e8f1ec;color:#126b4a}.table{overflow:auto;background:#fff;border:1px solid #dce5df;border-radius:14px}.tr{display:grid;grid-template-columns:1fr .65fr 1.45fr .9fr 48px;min-width:570px;border-bottom:1px solid #edf1ee;align-items:center}.tr>div{padding:9px;font-size:12px}.head{font-weight:800;background:#f0f5f1}.total{font-size:25px;font-weight:900;color:#0b4d36}.pill{font-size:11px;padding:5px 8px;border-radius:99px;background:#edf4ef}.empty{text-align:center;padding:24px;color:#77857e}.search{margin-bottom:10px}.toast{position:fixed;top:80px;left:12px;right:12px;background:#17231e;color:#fff;padding:12px;border-radius:12px;display:none;z-index:50;text-align:center}.link{color:#126b4a;font-weight:800}.dangerText{color:#b52e2e}@media(min-width:700px){.grid{grid-template-columns:repeat(4,1fr)}}
+</style>
+</head>
+<body>
+<header class="top"><div class="brand" id="brand">بقالة العزي للمواد الغذائية</div><div class="sub">المبيعات • الحسابات • المخزون • التقارير</div></header>
+<main class="wrap">
+<section id="home" class="page active">
+<div class="hero"><h1>مرحبًا بك</h1><div>نظام متكامل وسهل للاستخدام، يعمل محليًا على الجهاز.</div></div>
+<div class="grid"><div class="card stat">مبيعات اليوم<b id="todaySales">0</b></div><div class="card stat">فواتير اليوم<b id="todayCount">0</b></div><div class="card stat">ديون العملاء<b id="debtTotal">0</b></div><div class="card stat">مخزون منخفض<b id="lowCount">0</b></div></div>
+<div class="title">اختصارات</div><div class="actions"><button class="primary" onclick="go('invoice')">＋ فاتورة بيع</button><button class="muted" onclick="go('customer')">＋ عميل</button><button class="muted" onclick="go('stock')">＋ صنف</button><button class="muted" onclick="go('expense')">＋ مصروف</button></div>
+<div class="title">آخر الفواتير</div><div id="recent"></div>
+</section>
+
+<section id="invoice" class="page">
+<div class="title">فاتورة بيع</div>
+<div class="card">
+<div class="field"><label>اسم العميل</label><input id="customer" list="customerOptions" placeholder="عميل نقدي أو اسم العميل"><datalist id="customerOptions"></datalist></div>
+<div class="title">إضافة بند للفاتورة</div>
+<div class="grid">
+<div class="field"><label>الإجمالي</label><input id="lineTotal" type="number" inputmode="decimal"></div>
+<div class="field"><label>العدد / الكمية</label><input id="lineQty" type="number" inputmode="decimal" value="1"></div>
+<div class="field"><label>اسم الصنف أو التفاصيل</label><input id="lineName" list="productOptions"></div>
+<div class="field"><label>سعر الواحدة</label><input id="lineUnit" readonly></div>
+</div><datalist id="productOptions"></datalist>
+<button class="primary" onclick="addLine()">＋ إضافة إلى الفاتورة</button>
+</div>
+<div class="title">بنود الفاتورة</div>
+<div class="table"><div class="tr head"><div>الإجمالي</div><div>العدد</div><div>التفاصيل</div><div>سعر الواحدة</div><div>حذف</div></div><div id="lines"></div></div>
+<div class="card"><div>الإجمالي</div><div class="total" id="invoiceTotal">0</div><div class="grid"><div class="field"><label>المدفوع</label><input id="paid" type="number" inputmode="decimal" value="0"></div><div class="field"><label>المتبقي</label><input id="due" readonly></div></div>
+<div class="actions"><button class="primary" onclick="saveInvoice()">حفظ الفاتورة</button><button class="gold" onclick="printInvoice()">طباعة</button><button class="muted" onclick="pdfInvoice()">مشاركة PDF</button><button class="danger" onclick="newInvoice()">إلغاء</button></div></div>
+<div class="title">الفواتير المحفوظة</div><div id="invoiceList"></div>
+</section>
+
+<section id="stock" class="page">
+<div class="title">المخزون والأصناف</div><div class="card"><div class="grid"><div class="field"><label>اسم الصنف</label><input id="pName"></div><div class="field"><label>الكمية</label><input id="pQty" type="number"></div><div class="field"><label>سعر البيع</label><input id="pPrice" type="number"></div><div class="field"><label>الحد الأدنى</label><input id="pMin" type="number"></div></div><button class="primary" onclick="addProduct()">حفظ الصنف</button></div><div id="productList"></div>
+</section>
+
+<section id="customer" class="page">
+<div class="title">حسابات العملاء</div><div class="card"><div class="grid"><div class="field"><label>اسم العميل</label><input id="cName"></div><div class="field"><label>الجوال</label><input id="cPhone" inputmode="tel"></div></div><button class="primary" onclick="addCustomer()">حفظ العميل</button></div>
+<input id="customerSearch" class="search" placeholder="بحث عن عميل" oninput="render()"><div id="customerList"></div>
+</section>
+
+<section id="purchase" class="page">
+<div class="title">المشتريات</div><div class="card"><div class="grid"><div class="field"><label>اسم الصنف</label><input id="buyName"></div><div class="field"><label>الكمية</label><input id="buyQty" type="number"></div><div class="field"><label>التكلفة</label><input id="buyCost" type="number"></div><div class="field"><label>المورد</label><input id="buySupplier"></div></div><button class="primary" onclick="addPurchase()">حفظ المشتريات</button></div><div id="purchaseList"></div>
+</section>
+
+<section id="supplier" class="page">
+<div class="title">الموردون</div><div class="card"><div class="grid"><input id="supName" placeholder="اسم المورد"><input id="supPhone" placeholder="الجوال"></div><button class="primary" onclick="addSupplier()">حفظ المورد</button></div><div id="supplierList"></div>
+</section>
+
+<section id="expense" class="page">
+<div class="title">المصروفات</div><div class="card"><div class="grid"><input id="eName" placeholder="البيان"><input id="eAmount" type="number" placeholder="المبلغ"></div><button class="primary" onclick="addExpense()">حفظ المصروف</button></div><div id="expenseList"></div>
+</section>
+
+<section id="notes" class="page">
+<div class="title">الملاحظات</div><div class="card"><textarea id="noteText" rows="4" placeholder="اكتب ملاحظة..."></textarea><button class="primary" onclick="addNote()">حفظ الملاحظة</button></div><div id="noteList"></div>
+</section>
+
+<section id="reports" class="page">
+<div class="title">التقارير</div><div class="actions"><button class="muted" onclick="report('today')">اليوم</button><button class="muted" onclick="report('yesterday')">أمس</button><button class="muted" onclick="report('week')">الأسبوع</button><button class="muted" onclick="report('month')">الشهر</button><button class="muted" onclick="report('year')">السنة</button><button class="muted" onclick="report('all')">الكل</button></div><div id="reportBox" class="card"></div>
+</section>
+
+<section id="settings" class="page">
+<div class="title">الإعدادات</div><div class="card"><div class="field"><label>اسم المتجر</label><input id="storeName"></div><div class="field"><label>رقم الهاتف</label><input id="storePhone"></div><button class="primary" onclick="saveSettings()">حفظ الإعدادات</button></div>
+<div class="card"><h3>البيانات</h3><p>تُحفظ البيانات محليًا على الجهاز. استخدم النسخ الاحتياطي دوريًا.</p><div class="actions"><button class="gold" onclick="backup()">نسخ احتياطي ومشاركة</button><button class="danger" onclick="resetData()">مسح البيانات</button></div></div>
+</section>
+</main>
+<nav class="nav">
+<button id="n-home" onclick="go('home')">الرئيسية</button><button id="n-invoice" onclick="go('invoice')">الفواتير</button><button id="n-customer" onclick="go('customer')">العملاء</button><button id="n-stock" onclick="go('stock')">المخزون</button><button id="n-reports" onclick="go('reports')">التقارير</button><button id="n-settings" onclick="go('settings')">الإعدادات</button>
+</nav><div id="toast" class="toast"></div>
+<script>
+var KEY='azizi_complete_v1';
+var seed={store:{name:'بقالة العزي للمواد الغذائية',phone:'776425052'},invoices:[],customers:[],products:[],purchases:[],suppliers:[],expenses:[],notes:[]};
+var db=JSON.parse(localStorage.getItem(KEY)||'null')||seed, lines=[];
+function save(){localStorage.setItem(KEY,JSON.stringify(db))}
+function num(x){return Number(x)||0}
+function money(x){return num(x).toLocaleString('ar-YE',{maximumFractionDigits:2})}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function toast(s){var t=document.getElementById('toast');t.textContent=s;t.style.display='block';setTimeout(function(){t.style.display='none'},1800)}
+function go(id){document.querySelectorAll('.page').forEach(function(x){x.classList.remove('active')});document.getElementById(id).classList.add('active');document.querySelectorAll('.nav button').forEach(function(x){x.classList.remove('active')});var n=document.getElementById('n-'+id);if(n)n.classList.add('active');render();scrollTo(0,0)}
+function addLine(){var name=lineName.value.trim(),total=num(lineTotal.value),qty=num(lineQty.value)||1;if(!name||total<=0)return toast('أدخل اسم الصنف والإجمالي');var old=lines.find(function(x){return x.name===name});if(old){old.qty+=qty;old.total+=total;old.unit=old.total/old.qty}else lines.push({name:name,qty:qty,total:total,unit:total/qty});lineName.value='';lineTotal.value='';lineQty.value=1;lineUnit.value='';renderLines()}
+function renderLines(){var h='';lines.forEach(function(x,i){h+='<div class="tr"><div>'+money(x.total)+'</div><div>'+x.qty+'</div><div>'+esc(x.name)+'</div><div>'+money(x.unit)+'</div><div><button class="danger" onclick="removeLine('+i+')">×</button></div></div>'});document.getElementById('lines').innerHTML=h||'<div class="empty">لا توجد بنود</div>';var t=lines.reduce(function(a,x){return a+x.total},0);invoiceTotal.textContent=money(t);due.value=money(t-num(paid.value))}
+function removeLine(i){lines.splice(i,1);renderLines()}
+lineTotal.oninput=function(){lineUnit.value=(num(lineTotal.value)/(num(lineQty.value)||1)).toFixed(2)};lineQty.oninput=lineTotal.oninput;paid.oninput=renderLines;
+function newInvoice(){lines=[];customer.value='';paid.value=0;lineName.value='';lineTotal.value='';lineQty.value=1;lineUnit.value='';renderLines()}
+function saveInvoice(){if(!lines.length)return toast('أضف بندًا واحدًا على الأقل');var total=lines.reduce(function(a,x){return a+x.total},0),p=num(paid.value),name=customer.value.trim()||'نقدي',duev=total-p;if(duev<0)return toast('المدفوع أكبر من الإجمالي');var c=db.customers.find(function(x){return x.name===name});if(name!=='نقدي'&&!c){c={id:Date.now(),name:name,phone:'',balance:0,transactions:[]};db.customers.push(c)}if(c&&name!=='نقدي'){c.balance+=duev;c.transactions.push({date:new Date().toISOString(),type:'فاتورة',amount:duev,balance:c.balance,items:JSON.parse(JSON.stringify(lines))})}lines.forEach(function(l){var pdt=db.products.find(function(x){return x.name===l.name});if(pdt)pdt.qty-=l.qty});db.invoices.unshift({id:Date.now(),date:new Date().toISOString(),customer:name,items:JSON.parse(JSON.stringify(lines)),total:total,paid:p,due:duev});save();toast('تم حفظ الفاتورة');newInvoice();render()}
+function addProduct(){var n=pName.value.trim(),q=num(pQty.value),pr=num(pPrice.value),m=num(pMin.value);if(!n)return toast('أدخل اسم الصنف');var p=db.products.find(function(x){return x.name===n});if(p){p.qty+=q;p.price=pr;p.min=m;toast('تم تحديث الصنف')}else db.products.push({id:Date.now(),name:n,qty:q,price:pr,min:m});save();pName.value='';pQty.value='';pPrice.value='';pMin.value='';render()}
+function addCustomer(){var n=cName.value.trim();if(!n)return toast('أدخل اسم العميل');if(db.customers.some(function(x){return x.name===n}))return toast('العميل موجود');db.customers.push({id:Date.now(),name:n,phone:cPhone.value.trim(),balance:0,transactions:[]});save();cName.value='';cPhone.value='';render()}
+function pay(i){var a=num(prompt('أدخل مبلغ السداد'));if(!a)return;var c=db.customers[i];if(a>c.balance)return toast('المبلغ أكبر من الرصيد');c.balance-=a;c.transactions.push({date:new Date().toISOString(),type:'سداد',amount:a,balance:c.balance});save();render()}
+function delCustomer(i){if(confirm('حذف حساب العميل وكل حركاته؟')){db.customers.splice(i,1);save();render()}}
+function addPurchase(){var n=buyName.value.trim(),q=num(buyQty.value),cost=num(buyCost.value);if(!n||q<=0)return toast('أدخل بيانات المشتريات');var p=db.products.find(function(x){return x.name===n});if(p)p.qty+=q;else db.products.push({id:Date.now(),name:n,qty:q,price:0,min:0});db.purchases.unshift({date:new Date().toISOString(),name:n,qty:q,cost:cost,supplier:buySupplier.value.trim()});save();render()}
+function addSupplier(){var n=supName.value.trim();if(!n)return;if(db.suppliers.some(function(x){return x.name===n}))return toast('المورد موجود');db.suppliers.push({id:Date.now(),name:n,phone:supPhone.value.trim()});save();supName.value='';supPhone.value='';render()}
+function addExpense(){var n=eName.value.trim(),a=num(eAmount.value);if(!n||a<=0)return toast('أدخل بيانات المصروف');db.expenses.unshift({date:new Date().toISOString(),name:n,amount:a});save();eName.value='';eAmount.value='';render()}
+function addNote(){var n=noteText.value.trim();if(!n)return;db.notes.unshift({date:new Date().toISOString(),text:n});save();noteText.value='';render()}
+function remove(type,i){if(confirm('تأكيد الحذف؟')){db[type].splice(i,1);save();render()}}
+function statement(i){var c=db.customers[i],h='<div class="card"><h3>'+esc(c.name)+'</h3><div>الرصيد الحالي: <b>'+money(c.balance)+'</b></div>';(c.transactions||[]).forEach(function(t){h+='<div class="card"><small>'+new Date(t.date).toLocaleString('ar-YE')+'</small><div>'+esc(t.type)+' — '+money(t.amount)+'</div><div>الرصيد بعد العملية: <b>'+money(t.balance)+'</b></div></div>'});h+='</div>';reportBox.innerHTML=h;go('reports')}
+function render(){var d=new Date(),day=d.toDateString(),today=db.invoices.filter(function(x){return new Date(x.date).toDateString()===day});todaySales.textContent=money(today.reduce(function(a,x){return a+x.total},0));todayCount.textContent=today.length;debtTotal.textContent=money(db.customers.reduce(function(a,x){return a+x.balance},0));lowCount.textContent=db.products.filter(function(x){return x.qty<=x.min}).length;brand.textContent=db.store.name;
+recent.innerHTML=db.invoices.slice(0,5).map(function(x){return '<div class="card"><b>'+esc(x.customer)+'</b><div>'+money(x.total)+' — '+new Date(x.date).toLocaleString('ar-YE')+'</div></div>'}).join('')||'<div class="empty">لا توجد فواتير</div>';
+invoiceList.innerHTML=db.invoices.map(function(x,i){return '<div class="card"><b>'+esc(x.customer)+'</b><div>'+money(x.total)+' | مدفوع '+money(x.paid)+' | متبقي '+money(x.due)+'</div><small>'+new Date(x.date).toLocaleString('ar-YE')+'</small><div class="actions"><button class="danger" onclick="remove(\\'invoices\\','+i+')">حذف</button></div></div>'}).join('')||'<div class="empty">لا توجد فواتير</div>';
+productOptions.innerHTML=db.products.map(function(x){return '<option value="'+esc(x.name)+'">' }).join('');customerOptions.innerHTML=db.customers.map(function(x){return '<option value="'+esc(x.name)+'">' }).join('');
+productList.innerHTML=db.products.map(function(x,i){return '<div class="card"><div class="row"><b>'+esc(x.name)+'</b></div><div>الكمية: '+x.qty+' | سعر البيع: '+money(x.price)+' | الحد الأدنى: '+x.min+'</div>'+(x.qty<=x.min?'<p class="dangerText">⚠ المخزون منخفض</p>':'')+'<button class="danger" onclick="remove(\\'products\\','+i+')">حذف</button></div>'}).join('')||'<div class="empty">لا توجد أصناف</div>';
+var q=(customerSearch.value||'').toLowerCase();customerList.innerHTML=db.customers.map(function(x,i){return {x:x,i:i}}).filter(function(o){return o.x.name.toLowerCase().indexOf(q)>=0}).map(function(o){var x=o.x;return '<div class="card"><b>'+esc(x.name)+'</b><div>الرصيد: <b>'+money(x.balance)+'</b></div><div>'+esc(x.phone||'لا يوجد جوال')+'</div><div class="actions"><button class="gold" onclick="pay('+o.i+')">سداد</button><button class="muted" onclick="statement('+o.i+')">كشف الحساب</button>'+(x.phone?'<button class="muted" onclick="callPhone(\\''+esc(x.phone)+'\\')">اتصال</button><button class="muted" onclick="waPhone(\\''+esc(x.phone)+'\\')">واتساب</button>':'')+'<button class="danger" onclick="delCustomer('+o.i+')">حذف</button></div></div>'}).join('')||'<div class="empty">لا يوجد عملاء</div>';
+purchaseList.innerHTML=db.purchases.map(function(x,i){return '<div class="card">'+esc(x.name)+' — كمية '+x.qty+' — تكلفة '+money(x.cost)+'<button class="danger" onclick="remove(\\'purchases\\','+i+')">حذف</button></div>'}).join('')||'<div class="empty">لا توجد مشتريات</div>';
+supplierList.innerHTML=db.suppliers.map(function(x,i){return '<div class="card"><b>'+esc(x.name)+'</b><div>'+esc(x.phone)+'</div><button class="danger" onclick="remove(\\'suppliers\\','+i+')">حذف</button></div>'}).join('')||'<div class="empty">لا يوجد موردون</div>';
+expenseList.innerHTML=db.expenses.map(function(x,i){return '<div class="card">'+esc(x.name)+' — '+money(x.amount)+'<button class="danger" onclick="remove(\\'expenses\\','+i+')">حذف</button></div>'}).join('')||'<div class="empty">لا توجد مصروفات</div>';
+noteList.innerHTML=db.notes.map(function(x,i){return '<div class="card">'+esc(x.text)+'<div><small>'+new Date(x.date).toLocaleString('ar-YE')+'</small></div><button class="danger" onclick="remove(\\'notes\\','+i+')">حذف</button></div>'}).join('')||'<div class="empty">لا توجد ملاحظات</div>';
+storeName.value=db.store.name;storePhone.value=db.store.phone;renderLines()}
+function report(period){var end=new Date(),start=new Date(0);if(period==='today'){start=new Date();start.setHours(0,0,0,0)}else if(period==='yesterday'){start=new Date();start.setDate(start.getDate()-1);start.setHours(0,0,0,0);end=new Date(start);end.setDate(end.getDate()+1)}else if(period==='week'){start=new Date();start.setDate(start.getDate()-6);start.setHours(0,0,0,0)}else if(period==='month'){start=new Date();start.setDate(1);start.setHours(0,0,0,0)}else if(period==='year'){start=new Date();start.setMonth(0,0);start.setHours(0,0,0,0)}var inv=db.invoices.filter(function(x){var d=new Date(x.date);return d>=start&&d<end}),sales=inv.reduce(function(a,x){return a+x.total},0),paidSum=inv.reduce(function(a,x){return a+x.paid},0),exp=db.expenses.filter(function(x){var d=new Date(x.date);return d>=start&&d<end}).reduce(function(a,x){return a+x.amount},0),purchases=db.purchases.filter(function(x){var d=new Date(x.date);return d>=start&&d<end}).reduce(function(a,x){return a+x.cost},0);reportBox.innerHTML='<h3>تقرير '+period+'</h3><p>المبيعات: <b>'+money(sales)+'</b></p><p>المدفوع: <b>'+money(paidSum)+'</b></p><p>المصروفات: <b>'+money(exp)+'</b></p><p>المشتريات: <b>'+money(purchases)+'</b></p><p>عدد الفواتير: <b>'+inv.length+'</b></p><p>صافي الحركة النقدية: <b>'+money(paidSum-exp-purchases)+'</b></p>'}
+function saveSettings(){db.store.name=storeName.value.trim()||db.store.name;db.store.phone=storePhone.value.trim();save();render();toast('تم حفظ الإعدادات')}
+function backup(){var h='<html dir="rtl"><meta charset="utf-8"><body><h2>نسخة احتياطية - '+esc(db.store.name)+'</h2><pre>'+esc(JSON.stringify(db,null,2))+'</pre></body></html>';window.ReactNativeWebView&&window.ReactNativeWebView.postMessage(JSON.stringify({type:'pdf',html:h}))}
+function receipt(){var t=lines.reduce(function(a,x){return a+x.total},0),h='<html dir="rtl"><meta charset="utf-8"><style>body{font-family:Arial;width:72mm;margin:0;padding:3mm}h3{text-align:center}.l{display:flex;justify-content:space-between;border-bottom:1px dashed #888;padding:5px 0}</style><h3>'+esc(db.store.name)+'</h3><div>هاتف: '+esc(db.store.phone)+'</div><div>العميل: '+esc(customer.value||'نقدي')+'</div>';lines.forEach(function(x){h+='<div class="l"><span>'+esc(x.name)+' × '+x.qty+'</span><b>'+money(x.total)+'</b></div>'});return h+'<h3>الإجمالي: '+money(t)+'</h3></html>'}
+function printInvoice(){if(!lines.length)return toast('لا توجد بنود');window.ReactNativeWebView&&window.ReactNativeWebView.postMessage(JSON.stringify({type:'print',html:receipt()}))}
+function pdfInvoice(){if(!lines.length)return toast('لا توجد بنود');window.ReactNativeWebView&&window.ReactNativeWebView.postMessage(JSON.stringify({type:'pdf',html:receipt()}))}
+function callPhone(p){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage(JSON.stringify({type:'call',phone:p}))}
+function waPhone(p){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage(JSON.stringify({type:'wa',phone:p}))}
+document.addEventListener('DOMContentLoaded',function(){go('home');render()});
+</script>
+</body></html>
