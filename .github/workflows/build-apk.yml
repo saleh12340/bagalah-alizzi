@@ -19,7 +19,7 @@ jobs:
       - run: pnpm exec expo install --fix --pnpm
       - run: pnpm install --no-frozen-lockfile
       - run: pnpm exec expo config --type public
-      - run: CI=1 pnpm exec expo prebuild --platform android
+      - run: CI=1 pnpm exec expo prebuild --platform android --clean --non-interactive
       - uses: actions/setup-java@v4
         with:
           java-version: "17"
