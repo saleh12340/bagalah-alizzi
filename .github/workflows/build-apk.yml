@@ -28,6 +28,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      - name: Align Expo SDK dependencies
+        run: |
+          pnpm exec expo install --fix --pnpm
+          pnpm install --no-frozen-lockfile
+
       - name: Validate Expo
         run: pnpm exec expo config --type public
 
@@ -53,9 +58,11 @@ jobs:
 
       - name: Build release APK
         working-directory: android
+        env:
+          GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx4g -Dorg.gradle.daemon=false
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          ./gradlew clean assembleRelease --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
