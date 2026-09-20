@@ -2,7 +2,7 @@
   "name":"bagalah-alizzi-html",
   "version":"2.0.0",
   "private":true,
-  "main":"node_modules/expo/AppEntry.js",
+  "main":"index.js",
   "scripts":{"android":"expo start --android","check":"expo config --type public","build":"expo prebuild --platform android --non-interactive"},
   "dependencies":{
     "expo":"~54.0.29",
