@@ -3,7 +3,7 @@ module.exports={
   slug:"bagalah-alizzi",
   version:"3.0.0",
   orientation:"portrait",
-  icon:"./assets/images/icon.png",
+  icon:"./assets/images/android-icon-foreground.png",
   userInterfaceStyle:"light",
   backgroundColor:"#F4F7F4",
   primaryColor:"#126B4A",
@@ -23,7 +23,7 @@ module.exports={
   androidNavigationBar:{backgroundColor:"#F4F7F4",barStyle:"dark-content",enforceContrast:false},
   plugins:[
     "expo-build-properties",
-    ["expo-splash-screen",{backgroundColor:"#0B4D36",image:"./assets/images/icon.png",imageWidth:160,resizeMode:"contain"}]
+    ["expo-splash-screen",{backgroundColor:"#0B4D36",image:"./assets/images/android-icon-foreground.png",imageWidth:160,resizeMode:"contain"}]
   ],
   experiments:{reactCompiler:false}
 };
