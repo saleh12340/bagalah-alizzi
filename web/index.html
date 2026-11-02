@@ -123,7 +123,7 @@ function pdfInvoice(){if(!lines.length)return toast('لا توجد بنود');wi
 function callPhone(p){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage(JSON.stringify({type:'call',phone:p}))}
 function waPhone(p){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage(JSON.stringify({type:'wa',phone:p}))}
 
-function syncKeyboard(){var open=!!(window.visualViewport&&window.visualViewport.height<window.innerHeight*0.78);document.documentElement.classList.toggle("keyboard-open",open)}if(window.visualViewport){window.visualViewport.addEventListener("resize",syncKeyboard);window.visualViewport.addEventListener("scroll",syncKeyboard)}window.addEventListener("resize",syncKeyboard);document.addEventListener("focusin",function(e){if(/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))setTimeout(syncKeyboard,80)});document.addEventListener("focusout",function(){setTimeout(syncKeyboard,180)});
+function syncKeyboard(){var h=window.visualViewport?window.visualViewport.height:window.innerHeight;var open=h<window.screen.height*0.68;document.documentElement.classList.toggle("keyboard-open",open)}if(window.visualViewport){window.visualViewport.addEventListener("resize",syncKeyboard);window.visualViewport.addEventListener("scroll",syncKeyboard)}window.addEventListener("resize",syncKeyboard);document.addEventListener("focusin",function(e){if(/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)){setTimeout(syncKeyboard,80);setTimeout(function(){e.target.scrollIntoView({block:"center",behavior:"smooth"})},160)}});document.addEventListener("focusout",function(){setTimeout(syncKeyboard,180)});
 document.addEventListener('DOMContentLoaded',function(){go('home');render();syncKeyboard()});
 </script>
 </body></html>
